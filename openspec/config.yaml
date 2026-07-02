@@ -1,0 +1,62 @@
+# openspec/config.yaml
+schema: spec-driven
+
+context: |
+  Hardware project: Acebott QD001 ESP32 MAX V1.0 (chip CH340/CH341 WCH).
+  Tooling: arduino-cli 1.5.1 (brew), esptool bundled ACECode @ 115200 baud,
+           uv + pyserial for monitor, pytest for host-side script tests,
+           shellcheck for bash scripts.
+  Sketches: C++ Arduino (~/Documents/Arduino/), built with FQBN esp32:esp32:esp32.
+  Skill: acebott-esp32-flash (user-level, progressive disclosure).
+  No web framework, no package.json. Tests are dual-layer: host-side (pytest)
+  for scripts/automation, hardware-validation (flash + boot verify) for firmware.
+
+strict_tdd: true
+
+testing:
+  strict_tdd_mode: enabled
+  detected: 2026-07-02
+  note: |
+    Adapted TDD: host-side scripts (python/bash helpers, flash automation)
+    MUST use pytest/shellcheck before commit. Firmware changes use a
+    hardware-validation gate (compile -> flash -> serial monitor verify)
+    instead of unit tests, since the ESP32 cannot run pytest.
+  test_runner:
+    command: "uv run pytest"
+    framework: pytest
+  test_layers:
+    unit: AVAILABLE (pytest, host-side scripts)
+    integration: AVAILABLE (pytest + subprocess for arduino-cli/esptool)
+    e2e: AVAILABLE (hardware flash + serial monitor — manual/semi-automated)
+  coverage:
+    available: true
+    command: "uv run pytest --cov"
+  quality_tools:
+    linter: "ruff (python), shellcheck (bash)"
+    type_checker: "mypy (python, optional)"
+    formatter: "ruff format (python)"
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes (firmware bricks hardware)
+    - Identify affected modules (sketches, scripts, skill resources)
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Document hardware pin mappings and electrical constraints
+    - Include serial monitor expected output for validation flows
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing, validation)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Separate host-side (pytest) from firmware (hardware-validation) tasks
+  apply:
+    - Follow canonical flash workflow\n      (arduino-cli compile -> esptool bundled @ 115200)
+    - Load acebott-esp32-flash skill before any firmware operation
+    - Never use arduino-cli upload (forces 921600 baud, causes 0xE0)
+  verify:
+    - Host scripts: run pytest with coverage
+    - Firmware: compile clean + flash + serial monitor confirms expected boot output
+    - Compare implementation against every spec scenario
+  archive:
+    - Warn before merging destructive deltas (large removals)

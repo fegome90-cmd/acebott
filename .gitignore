@@ -1,0 +1,33 @@
+# Local Pi runtime state
+.atl/
+.pi/tasks/
+.pi/todos/
+_ctx/
+
+# LLM Wiki — entire folder (sources, raw PDFs, metadata)
+.llm-wiki/
+
+# OS
+.DS_Store
+
+# Bundled installer (940MB — reference only)
+ACECode Setup-Mac-x86/
+
+# Official guides, tutorials, drivers, installers
+Español/
+
+# Build artifacts
+/tmp/qd_build/
+*.bin
+*.elf
+*.map
+
+# Trifecta cache
+.trifecta/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
