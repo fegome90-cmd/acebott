@@ -111,11 +111,8 @@ Reusable procedures for AI agents working on this project.
 
 | Skill | Purpose |
 |-------|---------|
-| `arduino-development` | Sketch structure, board/core management, arduino-cli workflow |
-| `esp32-arduino-development` | ESP32-specific: FQBN, compile, flash, debug, GPIO/PWM/WiFi APIs |
-| `embedded-systems-engineering` | Firmware practices: ISRs, RTOS, driver patterns, code review |
-| `arduino-project-builder` | Evaluating third-party Arduino skills before installing |
-| `arduino-community-notes` | Community insights on AI-assisted Arduino development |
+| `esp32-arduino-development` | Default for ESP32: toolchain, FQBN, compile, flash, PWM, NVS, WiFi, troubleshooting |
+| `embedded-systems-engineering` | Firmware quality: ISR rules, RTOS, volatile, watchdog, code review, security |
 
 **External skill** (user-level, not in this repo):
 
@@ -280,8 +277,11 @@ Change proposals follow: `proposal.md` → `design.md` → `spec.md` → `tasks.
 ## Related Skills
 
 - `acebott-esp32-flash` — canonical flash workflow (external, user-level)
+- `acebott-esp32-flash` — canonical flash workflow (external, user-level)
 - `sdd-init` — OpenSpec initialization and project context detection
 - `project-guidelines-example` — template used to structure this file
+
+Archived reference docs (not skills) in `docs/seguridad/` and `docs/references/`.
 
 ---
 

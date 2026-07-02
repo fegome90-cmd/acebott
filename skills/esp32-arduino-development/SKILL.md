@@ -121,9 +121,20 @@ String s = prefs.getString("ssid", "default");
 prefs.end();
 ```
 
+### 8. Estructura de un sketch
+
+- Un `.ino` principal con `setup()` (se ejecuta una vez) y `loop()` (se ejecuta continuamente).
+- Múltiples `.ino`/`.cpp`/`.h` en la misma carpeta se compilan juntos.
+- `src/` dentro del sketch para módulos C++ auxiliares.
+- `library.properties` para librerías distribuibles.
+- El `.ino` debe estar en un directorio con el mismo nombre (`Foo/Foo.ino`).
+
 ## Gotchas / Trampas
 
 - **`Failed to connect to ESP32: Timed out waiting for packet header`** → el ESP32 no está en modo bootloader. Aplicar la secuencia BOOT/EN manual.
+- **Upload con monitor serie abierto** → puede bloquear el puerto; cerrar el monitor antes de flashear.
+- **Cores grandes (ESP32)** → la primera instalación del core ESP32 pesa cientos de MB y tarda varios minutos.
+- **Versionado de librerías** → una lib puede romper compatibilidad entre versiones; fijar con `@version` si el sketch depende de una API concreta.
 - **`Failed to connect ... Invalid head of packet`** → el puerto está ocupado por otro monitor serie, o baudrate de subida incoherente. Cerrar monitores; bajar `UploadSpeed`.
 - **`No board selected` / core no encontrado** → falta `arduino-cli core install esp32:esp32` o FQBN mal escrito.
 - **Library not found** → `arduino-cli lib install "<Name>"`; las libs locales van en `lib/<Name>/`.
