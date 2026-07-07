@@ -560,7 +560,7 @@ Returns a structured health report with pass/fail for each component.
  * Stays diagnostically neutral: `protocol_complete` is rendered as
  * "Protocol complete" — never "healthy" or "passed" (REQ-011).
  */
-function renderHealthResult(result: HealthCheckResult): {
+export function renderHealthResult(result: HealthCheckResult): {
 	content: Array<{ type: "text"; text: string }>;
 	details: Record<string, unknown>;
 } {
