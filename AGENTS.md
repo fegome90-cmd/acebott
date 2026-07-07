@@ -13,7 +13,7 @@ This repo combines three layers that work together:
 ┌─────────────────────────────────────────────────────────────┐
 │                     SKILLS LAYER                             │
 │  skills/ — reusable AI-agent procedures                     │
-│  (arduino-dev, esp32, embedded, project-builder, community) │
+│  (11 active skills: qd001-*, esp32-*, embedded)              │
 │  + external: acebott-esp32-flash (~/.pi/agent/skills/)      │
 └──────────────────────────┬──────────────────────────────────┘
                            │ guides
@@ -63,11 +63,17 @@ Reference materials (installers, guides, drivers) in `Español/` and
 acebott/
 ├── AGENTS.md                     ← this file (project guidelines)
 ├── skills/                       ← reusable AI-agent skills
-│   ├── arduino-development/
-│   ├── esp32-arduino-development/
-│   ├── embedded-systems-engineering/
-│   ├── arduino-project-builder/
-│   └── arduino-community-notes/
+│   ├── esp32-arduino-development/  ← core ESP32 development
+│   ├── esp32-connectivity/         ← WiFi, MQTT, HTTP
+│   ├── esp32-low-level-io/         ← I2C, SPI, ADC, DAC
+│   ├── esp32-rtos-power/           ← FreeRTOS, deep sleep
+│   ├── embedded-systems-engineering/ ← quality & ISR guidelines
+│   ├── qd001-app-control/          ← app protocol
+│   ├── qd001-ir-remote/            ← IR remote control
+│   ├── qd001-leds-buzzer/          ← LED & buzzer PWM
+│   ├── qd001-motors-mecanum/       ← Mecanum motor API
+│   ├── qd001-sensors/              ← HC-SR04 & line-tracking
+│   └── qd001-servo-scan/           ← obstacle avoidance servo
 ├── openspec/                     ← SDD specs and change tracking
 │   ├── config.yaml               ← project context + testing rules
 │   ├── specs/                    ← baseline specs
@@ -109,10 +115,10 @@ protocols, and course materials.
 
 Reusable procedures for AI agents working on this project.
 
-| Skill | Purpose |
-|-------|---------|
-| `esp32-arduino-development` | Default for ESP32: toolchain, FQBN, compile, flash, PWM, NVS, WiFi, troubleshooting |
-| `embedded-systems-engineering` | Firmware quality: ISR rules, RTOS, volatile, watchdog, code review, security |
+Consolidated catalog of 11 active skills (detailed in [skills/README.md](file:///Users/felipe_gonzalez/Developer/acebott/skills/README.md)):
+
+- **Robot QD001 (Wiki-driven)**: `qd001-motors-mecanum`, `qd001-servo-scan`, `qd001-sensors`, `qd001-ir-remote`, `qd001-app-control`, `qd001-leds-buzzer`.
+- **ESP32 & Embedded (Generic)**: `esp32-arduino-development`, `esp32-connectivity`, `esp32-low-level-io`, `esp32-rtos-power`, `embedded-systems-engineering`.
 
 **External skill** (user-level, not in this repo):
 
@@ -194,15 +200,18 @@ s = serial.Serial('/dev/cu.usbserial-110', 115200, timeout=1)
 
 Adapted TDD — different layers, different gates.
 
-### Host-Side Scripts (Python/Bash)
+### Host-Side Scripts & Harness (Python/Bash/TypeScript)
 
 ```bash
-uv run pytest              # unit tests
-uv run pytest --cov        # with coverage
-shellcheck scripts/*.sh    # bash linting
+uv run pytest                # unit tests (python)
+uv run pytest --cov          # with coverage (python)
+shellcheck scripts/*.sh      # bash linting
+pnpm test                    # harness unit tests (typescript/vitest)
+pnpm run lint                # harness lints and formatting (biome)
+pnpm run lint:md             # repository-wide markdown formatting check
 ```
 
-**Must pass before commit.** Target: 80% coverage on host-side code.
+**Must pass before commit.** Target: 80% coverage on Python code, green vitest and biome check in TypeScript.
 
 ### Firmware (Arduino C++)
 
@@ -219,6 +228,10 @@ Hardware-validation gate (the ESP32 can't run pytest):
 
 - [ ] Host scripts: `uv run pytest` passes
 - [ ] Bash scripts: `shellcheck` clean
+- [ ] Harness tests: `pnpm test` passes
+- [ ] Harness lints: `pnpm run lint` clean
+- [ ] Markdown docs: `pnpm run lint:md` clean
+- [ ] Git hooks check: `lefthook run pre-commit` passes
 - [ ] Firmware: compiles without errors
 - [ ] No hardcoded secrets or WiFi credentials in tracked files
 - [ ] Conventional Commit message ready
