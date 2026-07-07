@@ -31,3 +31,18 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Node dependencies
+node_modules/
+
+# Agent local states
+.agents/
+.claude/
+.pi-subagents/
+
+# Tool outputs
+graphify-out/
+
+
+# Scratch / temp files
+scratch/
