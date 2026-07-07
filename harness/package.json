@@ -1,0 +1,37 @@
+{
+  "name": "@acebott/harness",
+  "version": "0.1.0",
+  "description": "Pi domain harness for Acebott QD001 — native tools for robot detection, health checks, and firmware operations",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "biome check --error-on-warnings",
+    "fix": "biome check --write --error-on-warnings",
+    "fix:unsafe": "biome check --write --unsafe --error-on-warnings",
+    "format": "biome format --write",
+    "lint:md": "cd .. && npx markdownlint-cli2 '**/*.md'",
+    "fix:md": "cd .. && npx markdownlint-cli2 --fix '**/*.md'",
+    "lint:yaml": "cd .. && yamllint openspec/config.yaml lefthook.yml",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "ACEBOTT_HW=1 vitest run --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "markdownlint-cli2": "^0.17.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "private": true,
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
