@@ -6,10 +6,11 @@ context: |
   Tooling: arduino-cli 1.5.1 (brew), esptool bundled ACECode @ 115200 baud,
            uv + pyserial for monitor, pytest for host-side script tests,
            shellcheck for bash scripts.
+  Harness: TypeScript (Node.js) at harness/ using Vitest and Biome lint/format.
   Sketches: C++ Arduino (~/Documents/Arduino/), built with FQBN esp32:esp32:esp32.
   Skill: acebott-esp32-flash (user-level, progressive disclosure).
-  No web framework, no package.json. Tests are dual-layer: host-side (pytest)
-  for scripts/automation, hardware-validation (flash + boot verify) for firmware.
+  Tests are multi-layer: host-side Python (pytest), TypeScript harness (vitest),
+  and hardware-validation (flash + boot verify) for firmware.
 
 strict_tdd: true
 
@@ -18,23 +19,24 @@ testing:
   detected: 2026-07-02
   note: |
     Adapted TDD: host-side scripts (python/bash helpers, flash automation)
-    MUST use pytest/shellcheck before commit. Firmware changes use a
-    hardware-validation gate (compile -> flash -> serial monitor verify)
-    instead of unit tests, since the ESP32 cannot run pytest.
+    MUST use pytest/shellcheck before commit. TypeScript harness MUST use
+    vitest. Firmware changes use a hardware-validation gate (compile -> flash
+    -> serial monitor verify) instead of unit tests.
   test_runner:
-    command: "uv run pytest"
-    framework: pytest
+    command: "uv run pytest (python), pnpm test (typescript)"
+    framework: "pytest + vitest"
   test_layers:
-    unit: AVAILABLE (pytest, host-side scripts)
-    integration: AVAILABLE (pytest + subprocess for arduino-cli/esptool)
+    unit: AVAILABLE (pytest/vitest, host-side scripts & harness)
+    integration: AVAILABLE (pytest/vitest + subprocess for arduino-cli/esptool)
     e2e: AVAILABLE (hardware flash + serial monitor — manual/semi-automated)
   coverage:
     available: true
     command: "uv run pytest --cov"
   quality_tools:
-    linter: "ruff (python), shellcheck (bash)"
-    type_checker: "mypy (python, optional)"
-    formatter: "ruff format (python)"
+    linter: "ruff (python), shellcheck (bash), biome check (typescript)"
+    type_checker: "tsc --noEmit (typescript), mypy (python, optional)"
+    formatter: "ruff format (python), biome format (typescript)"
+
 
 rules:
   proposal:
