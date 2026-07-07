@@ -369,7 +369,7 @@ Si quieres publicar tu propia skill en el marketplace:
 4. **Scaffolding sin transparencia** - SOLO usuarios de Arduino
 5. **Discrepancia entre promesa y realidad** - la skill es 50% documentación CLI, 50% scaffolding
 
-**Recomendación Final:** 
+**Recomendación Final:**
 
 - **Para usuarios finales:** Ejecutar `uv run` en entorno aislado después de revisar código en GitHub
 - **Para autores:** NO usar `npx -y` - es un riesgo de seguridad crítico
