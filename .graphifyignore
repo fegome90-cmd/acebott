@@ -1,0 +1,14 @@
+# Ignore docs/papers — we only want the code AST graph for now
+*.md
+*.pdf
+*.docx
+*.pptx
+*.txt
+*.yaml
+*.yml
+*.html
+*.json
+*.sb3
+*.ino
+*.py
+*.sh
