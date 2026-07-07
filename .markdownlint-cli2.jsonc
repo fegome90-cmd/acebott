@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint-cli2/main/schema/markdownlint-cli2-config-schema.json",
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD022": false,
+    "MD025": false,
+    "MD028": false,
+    "MD029": false,
+    "MD031": false,
+    "MD032": false,
+    "MD033": false,
+    "MD034": false,
+    "MD036": false,
+    "MD040": false,
+    "MD060": false,
+    "MD024": { "siblings_only": true },
+    "MD046": { "style": "fenced" },
+    "MD048": { "style": "backtick" }
+  },
+  "ignores": [
+    "**/node_modules/**",
+    ".llm-wiki/**",
+    "Español/**",
+    "ACECode*/**",
+    ".pi/**",
+    ".pi-subagents/**",
+    ".claude/**",
+    ".agents/**",
+    "graphify-out/**"
+  ],
+  "gitignore": true
+}

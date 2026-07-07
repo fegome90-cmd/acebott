@@ -1,0 +1,28 @@
+# Lefthook — pre-commit gates for @acebott/harness
+# Run: lefthook install (from repo root)
+
+pre-commit:
+  parallel: true
+  commands:
+    biome-lint:
+      glob: "harness/{src,tests}/**/*.ts"
+      run: cd harness && pnpm biome check --no-errors-on-unmatched --error-on-warnings --staged {staged_files}
+      stage_fixed: true
+
+    tsc-check:
+      glob: "harness/{src,tests}/**/*.ts"
+      run: cd harness && pnpm tsc --noEmit
+
+    markdown-lint:
+      glob: "**/*.md"
+      run: cd harness && pnpm markdownlint-cli2 {staged_files}
+
+    yaml-lint:
+      glob: "*.{yaml,yml}"
+      run: yamllint openspec/config.yaml lefthook.yml
+
+pre-push:
+  commands:
+    test:
+      glob: "harness/**/*.ts"
+      run: cd harness && pnpm test
