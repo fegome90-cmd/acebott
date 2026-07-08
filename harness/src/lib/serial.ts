@@ -268,10 +268,17 @@ export function readSerial(opts: SerialReadOptions): Promise<SerialReadResult> {
 					exitCode: 0,
 				});
 			} else {
+				// Distinguish signal termination (code === null) from non-zero
+				// exit — "exited with code null" is opaque when debugging why a
+				// process died. Name the signal explicitly when one is present.
+				const error =
+					exitSignal !== null
+						? `Serial process terminated by signal ${exitSignal}`
+						: `Serial process exited with code ${code}`;
 				selectResult({
 					status: "error",
 					data: [...collected],
-					error: `Serial process exited with code ${code}`,
+					error,
 					code: "process_failed",
 					stderr: stderrText,
 					exitCode: code,

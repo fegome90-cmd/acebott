@@ -151,6 +151,31 @@ describe("readSerial", () => {
 			}
 		});
 
+		it("7.4b signal termination names the signal in the error message", async () => {
+			// code === null + signal !== null must NOT produce "exited with code
+			// null" — it must name the signal explicitly for debuggability.
+			const mockProc = createMockProcess();
+			mockedSpawn.mockReturnValue(mockProc as any);
+
+			const result = readSerial({
+				port: "/dev/cu.usbserial-110",
+				baud: 115200,
+				timeoutMs: 5000,
+			});
+
+			mockProc.exitCode = null;
+			mockProc.signalCode = "SIGTERM";
+			mockProc.emit("close", null, "SIGTERM");
+
+			const resolved = await result;
+			expect(resolved.status).toBe("error");
+			if (resolved.status === "error") {
+				expect(resolved.error).toContain("signal SIGTERM");
+				expect(resolved.error).not.toContain("code null");
+				expect(resolved.signal).toBe("SIGTERM");
+			}
+		});
+
 		it("7.5 timeout returns timeout with partial data", async () => {
 			const mockProc = createMockProcess();
 			mockedSpawn.mockReturnValue(mockProc as any);
