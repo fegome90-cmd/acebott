@@ -2,12 +2,14 @@
 
 > Implementation log. Updated after each phase.
 
-## Baseline
+## Baselines
 
-- Test count: 140 (9 files)
-- `pnpm run build`: pass
-- `pnpm run lint`: pass
-- `pnpm test`: pass (140/140)
+Four test-count reference points — do not confuse:
+
+- **140 tests** = early local iteration baseline during initial implementation (9 files).
+- **164 tests** = baseline at `c22cfbc` (= `origin/main` before this change, 10 files).
+- **224 tests** = after the initial hardening apply, before the 6 post-review fixes.
+- **233 tests** = final state after all review fixes (11 files). This is what the merged code produces.
 
 ## Pre-verified prerequisites
 
