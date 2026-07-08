@@ -116,6 +116,19 @@ export function readSerial(opts: SerialReadOptions): Promise<SerialReadResult> {
 		};
 
 		/**
+		 * Build the `child_termination_unconfirmed` error result used when
+		 * terminateChild throws or returns `failed`. Only the `error` string
+		 * differs between the two branches.
+		 */
+		const terminationErrorResult = (data: string[], error: string): SerialReadResult => ({
+			status: "error",
+			data,
+			error,
+			code: "child_termination_unconfirmed",
+			processMayStillBeRunning: true,
+		});
+
+		/**
 		 * Clear runtime listeners and timer, call terminateChild, and resolve.
 		 * Any termination failure overrides the selected result with `error`.
 		 * Never throws — routes all errors into an `error` result.
@@ -135,26 +148,24 @@ export function readSerial(opts: SerialReadOptions): Promise<SerialReadResult> {
 				termination = await terminateChild(proc);
 			} catch (err) {
 				// terminateChild is contract-bound not to throw, but defend.
-				resolve({
-					status: "error",
-					data: result.data,
-					error: `Serial child process termination threw: ${
-						err instanceof Error ? err.message : String(err)
-					}`,
-					code: "child_termination_unconfirmed",
-					processMayStillBeRunning: true,
-				});
+				resolve(
+					terminationErrorResult(
+						result.data,
+						`Serial child process termination threw: ${
+							err instanceof Error ? err.message : String(err)
+						}`,
+					),
+				);
 				return;
 			}
 
 			if (termination.status === "failed") {
-				resolve({
-					status: "error",
-					code: "child_termination_unconfirmed",
-					processMayStillBeRunning: true,
-					data: result.data,
-					error: "Serial child process termination could not be confirmed",
-				});
+				resolve(
+					terminationErrorResult(
+						result.data,
+						"Serial child process termination could not be confirmed",
+					),
+				);
 				return;
 			}
 
@@ -249,7 +260,7 @@ export function readSerial(opts: SerialReadOptions): Promise<SerialReadResult> {
 			});
 		});
 
-		proc.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
+		proc.on("close", (code: number | null, exitSignal: NodeJS.Signals | null) => {
 			if (code === 0) {
 				selectResult({
 					status: "incomplete",
@@ -264,7 +275,7 @@ export function readSerial(opts: SerialReadOptions): Promise<SerialReadResult> {
 					code: "process_failed",
 					stderr: stderrText,
 					exitCode: code,
-					signal,
+					signal: exitSignal,
 				});
 			}
 		});

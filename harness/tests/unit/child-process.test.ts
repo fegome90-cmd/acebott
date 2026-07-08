@@ -118,16 +118,25 @@ describe("waitForClose", () => {
 
 	it("removes its close listener after closure (no leak)", async () => {
 		const proc = createMockProc();
-		const before = proc.listenerCount("close");
 
-		await waitForClose(proc as never, 1000).catch(() => false);
-		// Force closure path
+		// Emit close while the promise is still pending (before timeout) so we
+		// exercise the real closure path, distinct from the timeout leak test.
+		// Track the listener installed by waitForClose: it is registered on the
+		// next tick after the call returns, so defer the emit briefly.
+		const promise = waitForClose(proc as never, 1000);
+		await new Promise((r) => setImmediate(r));
+		expect(proc.listenerCount("close")).toBe(1);
 		proc.exitCode = 0;
 		proc.emit("close", 0, null);
 
-		// After closure the listener should have been removed.
-		const after = proc.listenerCount("close");
-		expect(after).toBeLessThanOrEqual(before);
+		const start = Date.now();
+		const result = await promise;
+
+		// Closure path returns true, runs fast (<50ms, not the 1000ms timeout).
+		expect(result).toBe(true);
+		expect(Date.now() - start).toBeLessThan(50);
+		// After closure the one-shot listener must have been removed.
+		expect(proc.listenerCount("close")).toBe(0);
 	});
 
 	it("removes its close listener after timeout (no leak)", async () => {

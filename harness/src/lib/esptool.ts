@@ -134,12 +134,18 @@ export async function flashSketch(opts: FlashOptions): Promise<FlashResult> {
 	// Validate artifacts BEFORE spawning esptool (REQ-010, AD15).
 	await validateFlashArtifacts(opts.buildPath, opts.sketchName);
 
-	const { buildPath, sketchName, port, signal, onUpdate } = opts;
+	const { port, signal, onUpdate } = opts;
 
-	const bootloaderBin = join(buildPath, `${sketchName}.ino.bootloader.bin`);
-	const partitionsBin = join(buildPath, `${sketchName}.ino.partitions.bin`);
-	const bootApp0Bin = join(buildPath, "boot_app0.bin");
-	const firmwareBin = join(buildPath, `${sketchName}.ino.bin`);
+	// Derive flash paths from the SAME validated source (requiredArtifacts) so
+	// validation and flashing cannot drift apart. Order matches FLASH_OFFSETS.
+	const [bootloader, partitions, bootApp0, firmware] = requiredArtifacts(
+		opts.buildPath,
+		opts.sketchName,
+	);
+	const bootloaderBin = bootloader.path;
+	const partitionsBin = partitions.path;
+	const bootApp0Bin = bootApp0.path;
+	const firmwareBin = firmware.path;
 
 	const args = [
 		"--chip",
