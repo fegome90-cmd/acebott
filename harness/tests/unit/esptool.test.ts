@@ -536,26 +536,23 @@ describe("flashSketch artifact validation", () => {
 			return validFileStats;
 		});
 
-		await expect(
-			flashSketch({
-				buildPath: "/build",
-				sketchName: "health_check",
-				port: "/dev/cu.usbserial-110",
-			}),
-		).rejects.toThrow(EsptoolError);
-
+		// Call flashSketch exactly ONCE: double-calling can hide async mock races
+		// since the second call consumes different mock state than the first.
+		let caught: unknown;
 		try {
 			await flashSketch({
 				buildPath: "/build",
 				sketchName: "health_check",
 				port: "/dev/cu.usbserial-110",
 			});
-		} catch (err) {
-			expect(err).toBeInstanceOf(EsptoolError);
-			expect((err as Error).message).toContain("bootloader");
-			expect((err as Error).message).toContain("could not be accessed");
-			expect((err as Error).message).toContain("ENOENT");
+		} catch (error) {
+			caught = error;
 		}
+
+		expect(caught).toBeInstanceOf(EsptoolError);
+		expect((caught as EsptoolError).message).toContain("bootloader");
+		expect((caught as EsptoolError).message).toContain("could not be accessed");
+		expect((caught as EsptoolError).message).toContain("ENOENT");
 	});
 
 	it("11.2 empty application firmware raises artifact-specific EsptoolError", async () => {
@@ -566,25 +563,22 @@ describe("flashSketch artifact validation", () => {
 			return validFileStats;
 		});
 
-		await expect(
-			flashSketch({
-				buildPath: "/build",
-				sketchName: "health_check",
-				port: "/dev/cu.usbserial-110",
-			}),
-		).rejects.toThrow(EsptoolError);
-
+		// Call flashSketch exactly ONCE: double-calling can hide async mock races
+		// since the second call consumes different mock state than the first.
+		let caught: unknown;
 		try {
 			await flashSketch({
 				buildPath: "/build",
 				sketchName: "health_check",
 				port: "/dev/cu.usbserial-110",
 			});
-		} catch (err) {
-			expect(err).toBeInstanceOf(EsptoolError);
-			expect((err as Error).message).toContain("application firmware");
-			expect((err as Error).message).toMatch(/empty|0 bytes/);
+		} catch (error) {
+			caught = error;
 		}
+
+		expect(caught).toBeInstanceOf(EsptoolError);
+		expect((caught as EsptoolError).message).toContain("application firmware");
+		expect((caught as EsptoolError).message).toMatch(/empty|0 bytes/);
 	});
 
 	it("11.3 directory supplied as artifact raises EsptoolError", async () => {
@@ -601,25 +595,22 @@ describe("flashSketch artifact validation", () => {
 			return validFileStats;
 		});
 
-		await expect(
-			flashSketch({
-				buildPath: "/build",
-				sketchName: "health_check",
-				port: "/dev/cu.usbserial-110",
-			}),
-		).rejects.toThrow(EsptoolError);
-
+		// Call flashSketch exactly ONCE: double-calling can hide async mock races
+		// since the second call consumes different mock state than the first.
+		let caught: unknown;
 		try {
 			await flashSketch({
 				buildPath: "/build",
 				sketchName: "health_check",
 				port: "/dev/cu.usbserial-110",
 			});
-		} catch (err) {
-			expect(err).toBeInstanceOf(EsptoolError);
-			expect((err as Error).message).toContain("partition table");
-			expect((err as Error).message).toContain("not a regular file");
+		} catch (error) {
+			caught = error;
 		}
+
+		expect(caught).toBeInstanceOf(EsptoolError);
+		expect((caught as EsptoolError).message).toContain("partition table");
+		expect((caught as EsptoolError).message).toContain("not a regular file");
 	});
 
 	it("11.4 any single invalid artifact prevents esptool spawn", async () => {

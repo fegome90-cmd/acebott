@@ -177,22 +177,30 @@ describe("readSerial", () => {
 		});
 
 		it("7.5 timeout returns timeout with partial data", async () => {
-			const mockProc = createMockProcess();
-			mockedSpawn.mockReturnValue(mockProc as any);
+			vi.useFakeTimers();
+			try {
+				const mockProc = createMockProcess();
+				mockedSpawn.mockReturnValue(mockProc as any);
 
-			const result = readSerial({
-				port: "/dev/cu.usbserial-110",
-				baud: 115200,
-				timeoutMs: 50,
-			});
+				const result = readSerial({
+					port: "/dev/cu.usbserial-110",
+					baud: 115200,
+					timeoutMs: 50,
+				});
 
-			mockProc.stdout?.emit("data", Buffer.from('{"t":"leds","left":"ok"}\n'));
+				mockProc.stdout?.emit("data", Buffer.from('{"t":"leds","left":"ok"}\n'));
 
-			const resolved = await result;
-			expect(resolved.status).toBe("timeout");
-			if (resolved.status === "timeout") {
-				expect(resolved.data).toHaveLength(1);
-				expect(resolved.data[0]).toBe('{"t":"leds","left":"ok"}');
+				// Advance fake time past the timeout (fires at timeoutMs + 2000 buffer).
+				await vi.advanceTimersByTimeAsync(2050);
+
+				const resolved = await result;
+				expect(resolved.status).toBe("timeout");
+				if (resolved.status === "timeout") {
+					expect(resolved.data).toHaveLength(1);
+					expect(resolved.data[0]).toBe('{"t":"leds","left":"ok"}');
+				}
+			} finally {
+				vi.useRealTimers();
 			}
 		});
 
@@ -261,24 +269,31 @@ describe("readSerial", () => {
 		});
 
 		it("7.8 timeout selected before abort remains timeout", async () => {
-			const mockProc = createMockProcess();
-			mockedSpawn.mockReturnValue(mockProc as any);
+			vi.useFakeTimers();
+			try {
+				const mockProc = createMockProcess();
+				mockedSpawn.mockReturnValue(mockProc as any);
 
-			const controller = new AbortController();
+				const controller = new AbortController();
 
-			const result = readSerial({
-				port: "/dev/cu.usbserial-110",
-				baud: 115200,
-				timeoutMs: 50,
-				signal: controller.signal,
-			});
+				const result = readSerial({
+					port: "/dev/cu.usbserial-110",
+					baud: 115200,
+					timeoutMs: 50,
+					signal: controller.signal,
+				});
 
-			// Wait for the timeout to fire first (fires at timeoutMs + 2000 buffer).
-			await new Promise((r) => setTimeout(r, 2150));
-			controller.abort();
+				// Advance fake time past the timeout (fires at timeoutMs + 2000 buffer).
+				// advanceTimersByTimeAsync flushes the microtask queue, so the
+				// mocked terminateChild promise resolves and selectResult settles.
+				await vi.advanceTimersByTimeAsync(2050);
+				controller.abort();
 
-			const resolved = await result;
-			expect(resolved.status).toBe("timeout");
+				const resolved = await result;
+				expect(resolved.status).toBe("timeout");
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it("7.9 stop predicate selected before close remains success", async () => {
@@ -368,18 +383,26 @@ describe("readSerial", () => {
 		});
 
 		it("7.13 termination failure after selected timeout returns error", async () => {
-			const mockProc = createMockProcess();
-			mockedSpawn.mockReturnValue(mockProc as any);
-			mockedTerminateChild.mockResolvedValue(TERMINATION_FAILED);
+			vi.useFakeTimers();
+			try {
+				const mockProc = createMockProcess();
+				mockedSpawn.mockReturnValue(mockProc as any);
+				mockedTerminateChild.mockResolvedValue(TERMINATION_FAILED);
 
-			const result = readSerial({
-				port: "/dev/cu.usbserial-110",
-				baud: 115200,
-				timeoutMs: 50,
-			});
+				const result = readSerial({
+					port: "/dev/cu.usbserial-110",
+					baud: 115200,
+					timeoutMs: 50,
+				});
 
-			const resolved = await result;
-			expect(resolved.status).toBe("error");
+				// Advance fake time past the timeout (fires at timeoutMs + 2000 buffer).
+				await vi.advanceTimersByTimeAsync(2050);
+
+				const resolved = await result;
+				expect(resolved.status).toBe("error");
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it("7.14 termination failure after selected cancellation returns error", async () => {
