@@ -26,9 +26,16 @@ export default function (pi: ExtensionAPI) {
 }
 
 export { type CompileResult, compileSketch } from "./lib/arduino-cli.js";
+export {
+	ChildTerminationError,
+	safeLog,
+	type TerminateChildResult,
+	terminateChild,
+} from "./lib/child-process.js";
 export * from "./lib/constants.js";
 export {
 	checkEsptoolAvailable,
+	EsptoolError,
 	type FlashResult,
 	flashSketch,
 } from "./lib/esptool.js";
@@ -38,7 +45,11 @@ export {
 	isHealthLine,
 	parseHealthLines,
 } from "./lib/parser.js";
-export { readSerial, type SerialReadOptions } from "./lib/serial.js";
+export {
+	readSerial,
+	type SerialReadOptions,
+	type SerialReadResult,
+} from "./lib/serial.js";
 export {
 	getSkillByName,
 	type RecommendArea,
@@ -48,7 +59,15 @@ export {
 export { type ChipInfo, detectChip } from "./lib/usb.js";
 // Re-export types and utilities for testing
 export { type DetectResult, detectRobot } from "./tools/detect.js";
-export { type HealthToolResult, runHealthCheck } from "./tools/health.js";
+export {
+	type HealthCheckContext,
+	type HealthCheckResult,
+	type HealthStage,
+	type HealthToolResult,
+	mapSerialResult,
+	type RunHealthCheckOptions,
+	runHealthCheck,
+} from "./tools/health.js";
 export {
 	executeSkillsAction,
 	type SkillsResult,

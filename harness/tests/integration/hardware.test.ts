@@ -45,21 +45,25 @@ describe.skipIf(!HARDWARE_ENABLED)("robot_health (hardware)", () => {
 	});
 
 	it("runs full health check and returns pass", async () => {
-		const result = await runHealthCheck(false);
+		const result = await runHealthCheck({ skipFlash: false });
 
-		expect(result.report.result).toBe("pass");
-		expect(result.report.leds.left).toBe("ok");
-		expect(result.report.leds.right).toBe("ok");
-		expect(result.report.buzzer).toBe("ok");
-		expect(result.report.motors.fl).toBe("ok");
-		expect(result.report.ultrasonic.distance_cm).not.toBeNull();
-		expect(result.report.tracking.left).not.toBeNull();
+		// Full-flash path: protocol_complete is the expected neutral status.
+		expect(result.status).toBe("protocol_complete");
 		expect(result.flashed).toBe(true);
+		if (result.status === "protocol_complete") {
+			expect(result.report.result).toBe("pass");
+			expect(result.report.leds.left).toBe("ok");
+			expect(result.report.leds.right).toBe("ok");
+			expect(result.report.buzzer).toBe("ok");
+			expect(result.report.motors.fl).toBe("ok");
+			expect(result.report.ultrasonic.distance_cm).not.toBeNull();
+			expect(result.report.tracking.left).not.toBeNull();
+		}
 	}, 120_000); // 2 min timeout for compile + flash + serial
 
 	it("reads serial with skipFlash after flash", async () => {
 		// health_check.ino was flashed by previous test
-		const result = await runHealthCheck(true);
+		const result = await runHealthCheck({ skipFlash: true });
 
 		expect(result.flashed).toBe(false);
 		// Result may vary since the firmware runs setup() only once
