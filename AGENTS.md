@@ -115,7 +115,7 @@ protocols, and course materials.
 
 Reusable procedures for AI agents working on this project.
 
-Consolidated catalog of 11 active skills (detailed in [skills/README.md](file:///Users/felipe_gonzalez/Developer/acebott/skills/README.md)):
+Consolidated catalog of 11 active skills (detailed in `skills/README.md`):
 
 - **Robot QD001 (Wiki-driven)**: `qd001-motors-mecanum`, `qd001-servo-scan`, `qd001-sensors`, `qd001-ir-remote`, `qd001-app-control`, `qd001-leds-buzzer`.
 - **ESP32 & Embedded (Generic)**: `esp32-arduino-development`, `esp32-connectivity`, `esp32-low-level-io`, `esp32-rtos-power`, `embedded-systems-engineering`.
@@ -139,8 +139,10 @@ recipe, boot verification, ACECode troubleshooting, firmware variants.
 
 // Globals at top, setup() then loop()
 // Use meaningful pin names, not magic numbers
-const int TRIG_PIN = 5;
-const int ECHO_PIN = 18;
+// QD001 ultrasonic pins: TRIG 13, ECHO 14 — confirmed by vendor sketch
+// 3.1UltrasonicRanging.ino (SHA-256: 692448072d35ef6f82c1db1a452b0819e448fa04256a6bcb0530cb486e9bca96)
+const int TRIG_PIN = 13;
+const int ECHO_PIN = 14;
 
 void setup() {
   Serial.begin(115200);  // Always 115200 — matches flash baud
@@ -161,18 +163,21 @@ void loop() {
 
 ### Motor Control (ACB_SmartCar_V2)
 
+Motor API confirmed by vendor sketch `4.3Web_control_car.ino`
+(SHA-256: `ddd1b237b983de342744c28eab711bfcc8c8caf0cbbd5fecac149ff66ff8456b`).
+
 ```cpp
-// ⚠️ 150ms minimum spin time — shorter pulses may not register
-car.forward(speed);   // speed: 0-255
-car.backward(speed);
-car.left(speed);
-car.right(speed);
-car.stop();
-// For precise turns, use timed pulses:
-car.left(150);
-delay(150);
-car.stop();
+// Vendor-confirmed usage from 4.3Web_control_car.ino.
+// ACB_SmartCar.Move(direction, speed) — speed: 0-255
+ACB_SmartCar.Move(Forward, 255);
+ACB_SmartCar.Move(Backward, 255);
+
+// ⚠️ 150ms minimum spin time — shorter pulses may not register on V1.0.
+// For precise turns, use timed pulses with the vendor-confirmed API.
 ```
+
+> The `car.forward(speed)` / `car.backward(speed)` style shown in older notes
+> is NOT vendor-confirmed. Use `ACB_SmartCar.Move(direction, speed)` instead.
 
 ### WiFi Sketch Pattern
 
@@ -289,7 +294,6 @@ Change proposals follow: `proposal.md` → `design.md` → `spec.md` → `tasks.
 
 ## Related Skills
 
-- `acebott-esp32-flash` — canonical flash workflow (external, user-level)
 - `acebott-esp32-flash` — canonical flash workflow (external, user-level)
 - `sdd-init` — OpenSpec initialization and project context detection
 - `project-guidelines-example` — template used to structure this file

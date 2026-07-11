@@ -24,7 +24,8 @@ management, serial debugging, and troubleshooting.
 - Resolviendo errores típicos: `Failed to connect to ESP32: Timed out`, `No board
   selected`, `Library not found`, permisos de puerto serie.
 - Trabajando con APIs específicas de ESP32 Arduino: `ledcAttach`/`ledcWrite`
-  (PWM 3.x), `Preferences` (NVS), `WiFi`, touch pins, DAC.
+  (PWM 3.x — **INCOMPATIBLE con este proyecto**, solo referencia de migración),
+  `Preferences` (NVS), `WiFi`, touch pins, DAC.
 
 ## Conocimiento clave / Referencia
 
@@ -37,8 +38,8 @@ Configuración del core ESP32 (referencia — ejecutar solo si el usuario lo pid
 arduino-cli config init
 arduino-cli config add board_manager.additional_urls https://dl.espressif.com/dl/package_esp32_index.json
 arduino-cli core update-index
-arduino-cli core install esp32:esp32
-arduino-cli core list   # verificar instalación
+arduino-cli core install esp32:esp32@2.0.18   # core fijado para este proyecto
+arduino-cli core list   # verificar instalación (debe mostrar 2.0.18)
 ```
 
 ### 2. FQBN (Fully Qualified Board Name)
@@ -64,10 +65,10 @@ arduino-cli compile --fqbn esp32:esp32:esp32 --output-dir ./build
 # Identificar el puerto serie del ESP32 conectado
 arduino-cli board list
 
-# ⚠️ ACERCA DE UPLOAD: arduino-cli upload fuerza 921600 baud.
-# En este proyecto se usa esptool bundled @ 115200 (ver acebott-esp32-flash).
-# El comando de abajo es referencia general únicamente:
-arduino-cli upload --fqbn esp32:esp32:esp32 -p /dev/cu.usbserial-110
+# ⚠️ UPLOAD: NUNCA usar `arduino-cli upload` en este proyecto — fuerza 921600
+# baud y causa error 0xE0 en CH340. El flasheo SIEMPRE se hace a través del
+# skill `acebott-esp32-flash` (esptool bundled @ 115200). No inlinear aquí la
+# receta; consultar dicha skill para el workflow canónico.
 
 # Opciones útiles de FQBN (compile)
 :PartitionScheme=huge_app    # programa grande > partición por defecto
@@ -121,6 +122,12 @@ El ESP32 arranca a 115200 para el bootloader.
 
 ### 7. APIs ESP32 Arduino (referencia de código)
 
+> **INCOMPATIBLE con este proyecto — referencia de migración únicamente.**
+> Este proyecto usa el core `esp32:esp32@2.0.18` (Arduino-ESP32 2.x). El bloque
+> `ledcAttach`/`ledcWrite` siguiente corresponde a Arduino-ESP32 **3.x** y NO es
+> ejecutable aquí; se conserva solo como guía de migración si algún día se sube
+> de versión de core.
+
 ```cpp
 // PWM — API de Arduino-ESP32 3.x (cambió vs 2.x: ledcSetup quedó obsoleto)
 ledcAttach(pin, freq_hz, resolution_bits);   // ej. ledcAttach(2, 5000, 8);
@@ -159,14 +166,15 @@ prefs.end();
   Aplicar secuencia BOOT/EN manual.
 - **`Failed to connect ... Invalid head of packet`** → puerto ocupado o baudrate
   incoherente. Cerrar monitores; bajar `UploadSpeed`.
-- **`No board selected`** → falta `arduino-cli core install esp32:esp32` o FQBN
-  mal escrito.
+- **`No board selected`** → falta `arduino-cli core install esp32:esp32@2.0.18`
+  o FQBN mal escrito.
 - **Library not found** → `arduino-cli lib install "<Name>"`.
 - **Permisos de puerto** → en macOS el puerto es accesible por defecto
   (`/dev/cu.usbserial-*`). En Linux: agregar a grupo `dialout`.
 - **Sketch demasiado grande** → usar `:PartitionScheme=huge_app` o `min_spiffs`.
-- **API PWM cambió en 3.x** → `ledcSetup`/`ledcAttachPin` obsoletos, usar
-  `ledcAttach(pin, freq, res)`.
+- **API PWM cambió en 3.x** → `ledcSetup`/`ledcAttachPin` obsoletos en 3.x. En
+  este proyecto (core 2.0.18) NO usar `ledcAttach(pin, freq, res)`; es API 3.x,
+  **INCOMPATIBLE con este proyecto** (solo referencia de migración).
 - **`.ino` debe coincidir con el directorio** → `Foo/Foo.ino`, no `Foo/bar.ino`.
 - **`while (!Serial)` innecesario en ESP32** — USB-Serial siempre listo.
 
