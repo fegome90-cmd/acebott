@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Verify preservation preconditions
+## Task 1: Verify preservation preconditions
 
 **Files:** None (read-only).
 
