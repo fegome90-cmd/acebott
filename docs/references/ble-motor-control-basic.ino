@@ -1,14 +1,14 @@
 /*
  * BLE GATT Motor Control for Acebott QD001 ESP32 MAX V1.0
- * 
+ *
  * Minimal working example using Bluedroid (default Arduino BLE library).
- * 
+ *
  * Protocol:
  *   Client → ESP32: Single char commands on Command Characteristic
  *     F,B,L,R,S = Forward, Backward, Left, Right, Stop
  *     F,200 = Forward at speed 200 (0-255)
  *   ESP32 → Client: Binary telemetry on Telemetry Characteristic (NOTIFY)
- * 
+ *
  * Hardware: Acebott QD001 with L298N motor driver
  * Stack: Bluedroid (default in Arduino ESP32 core 2.0.18)
  */
