@@ -2,6 +2,11 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Recovery snapshot (2026-07-12):** This document captures the
+> pre-recovery preconditions. The thematic branches now exist; do not rerun
+> the create/restore steps or overwrite those refs. Verify their current
+> status instead.
+
 **Goal:** Separate the preserved WIP stash into independently reviewable branches without modifying divergent `main`.
 
 **Architecture:** Treat `origin/main` as the base for every thematic branch. Recover tracked files from the stash's main tree and untracked files from its third parent, never applying the mixed stash wholesale. Keep `main`, `backup/main-diverged-20260711`, and `stash@{0}` intact until every recovered branch is verified.

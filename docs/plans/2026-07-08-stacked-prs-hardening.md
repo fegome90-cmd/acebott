@@ -2,6 +2,12 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> **Historical snapshot (2026-07-08):** This plan records the pre-merge
+> execution state based on `c22cfbc`. Since then, `origin/main` advanced and
+> the merged harness reports 233 tests. Do not rerun these branch or cherry-pick
+> commands without revalidating the commit SHAs, base, and test expectations;
+> use `apply-progress.md` for the current hardening status.
+
 **Goal:** Split the harness hardening work into 2 stacked PRs (code, then docs) that each compile and pass the full suite. Incorporates all findings from two external audits and the local preflight.
 
 **Test baselines (three distinct numbers — do not confuse):**
