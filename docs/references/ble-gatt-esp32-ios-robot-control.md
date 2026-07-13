@@ -1,7 +1,24 @@
 # BLE GATT on ESP32 for iOS-Compatible Robot Control
 
-> Comprehensive research for replacing WiFi with BLE GATT on Acebott QD001.
+> BLE GATT research and implementation notes for Acebott QD001.
 > Compiled: 2026-07-10
+
+## Protocol map — do not mix these stacks
+
+This branch intentionally contains two BLE protocol stacks:
+
+| Stack | Status | Files | UUIDs | Command format | Telemetry format |
+|-------|--------|-------|-------|----------------|------------------|
+| **QD001 text-v1** | **Canonical active QD001 implementation** | `sketches/ble-gatt-control/ble-gatt-control.ino`, `scripts/ble_client.py` | Service `12345678-1234-1234-1234-1234567890ab`; command `abcd1234-5678-90ab-cdef-1234567890ab`; telemetry `c8f60001-1234-5678-9abc-def012345678` | ASCII `F`, `B`, `L`, `R`, `S`, optional speed like `F,200`; `L/R` preserve the verified QD001 spin-left/spin-right mapping | UTF-8 CSV: `distance,ir_left,ir_right` |
+| **Reference binary-v2** | Generic ESP32 reference only; **not canonical QD001 firmware** | `docs/references/ble-motor-control-basic.ino`, `docs/references/ble_motor_controller.py`, `docs/references/ios-ble-swift.swift` | Service `19b10000-e8f2-537e-4f6c-d104768a1214`; command `19b10002-e8f2-537e-4f6c-d104768a1214`; telemetry `19b10001-e8f2-537e-4f6c-d104768a1214` | ASCII motor commands for a generic dual-H-bridge sketch: `F/B/L/R/S`; `T/Y` are spin-left/spin-right | Packed 6 bytes: little-endian `uint16 distance`, then `uint8 ir_left`, `ir_right`, `line_center`, `battery` |
+
+Safety contract for **QD001 text-v1**:
+- Firmware failsafe stops motors after **500 ms** without a command.
+- Clients must use BLE write-without-response and retransmit the active movement command below that window; `scripts/ble_client.py` uses **200 ms**.
+- Clients must send `S` before exit/disconnect.
+- For deliberate QD001 turns/spins, keep pulses at roughly **150 ms minimum** before sending `S`; shorter pulses may not physically register on V1.0.
+
+Hardware validation status: this branch has software-level examples and host-side tests. Do **not** treat it as hardware-validated until `arduino-cli compile`, flash via the project flash workflow, serial boot, BLE connection, movement, failsafe, and telemetry have been observed on the robot.
 
 ---
 
@@ -70,14 +87,17 @@ pCharacteristic->setValue((uint8_t*)&sensorData, sizeof(sensorData));
 pCharacteristic->notify();
 ```
 
-### 1.5 Minimal BLE Motor Control Service (Complete Code)
+### 1.5 Reference BLE Motor Control Service
 
-See `ble-motor-control-basic.ino` in this directory for the full working sketch.
+See `ble-motor-control-basic.ino` in this directory for a generic
+reference/binary-v2 sketch. It is deliberately segregated from the canonical
+QD001 text-v1 firmware.
 
-Key architecture:
+Reference architecture:
 - **Command characteristic** (client → ESP32): `PROPERTY_WRITE | PROPERTY_WRITE_NR`
 - **Telemetry characteristic** (ESP32 → client): `PROPERTY_NOTIFY` with `BLE2902`
-- **Protocol**: Single-char commands (`F`, `B`, `L`, `R`, `S`) with optional speed (`F,200`)
+- **Protocol**: Single-char commands with optional speed (`F,200`); `T/Y` are generic spin-left/spin-right commands.
+- **Telemetry**: Packed 6-byte binary struct
 - **Safety**: Motors stop on BLE disconnect
 
 ---
@@ -177,7 +197,7 @@ ESP32 uses Time-Division Multiplexing (TDM) to share radio:
 
 ---
 
-## 4. Python BLE Client (bleak)
+## 4. Python BLE Clients (bleak)
 
 ### 4.1 Installation
 
@@ -191,9 +211,9 @@ pip install bleak
 import asyncio
 from bleak import BleakScanner, BleakClient
 
-SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214"
-COMMAND_CHAR_UUID = "19b10002-e8f2-537e-4f6c-d104768a1214"
-TELEMETRY_CHAR_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214"
+SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab"
+COMMAND_CHAR_UUID = "abcd1234-5678-90ab-cdef-1234567890ab"
+TELEMETRY_CHAR_UUID = "c8f60001-1234-5678-9abc-def012345678"
 
 async def scan():
     devices = await BleakScanner.discover(timeout=5.0)
@@ -218,11 +238,9 @@ async def motor_control():
             response=False  # Write Without Response
         )
 
-        # Subscribe to telemetry notifications
+        # Subscribe to canonical CSV telemetry notifications
         def notification_handler(sender, data):
-            # Parse binary struct
-            import struct
-            distance, ir_left, ir_right, line_center = struct.unpack("<HBBB", data)
+            distance, ir_left, ir_right = data.decode("utf-8").split(",")
             print(f"Distance: {distance}cm, IR: {ir_left},{ir_right}")
 
         await client.start_notify(TELEMETRY_CHAR_UUID, notification_handler)
@@ -240,11 +258,13 @@ asyncio.run(motor_control())
 
 ### 4.4 Complete Python BLE Motor Controller
 
-See `ble_motor_controller.py` in this directory for the full working script with:
-- Async scanning and connection
-- Joystick-style motor commands
-- Real-time telemetry display
-- Automatic reconnection
+Use `../../scripts/ble_client.py` for the canonical QD001 text-v1 client. It
+provides async input, write-without-response, command retransmit every 200 ms,
+and sends `S` on exit.
+
+`ble_motor_controller.py` in this directory is the generic reference/binary-v2
+client. It parses exactly the packed 6-byte telemetry emitted by
+`ble-motor-control-basic.ino`.
 
 ---
 
@@ -383,23 +403,22 @@ Key findings:
 
 ## 7. Recommended Architecture for Acebott QD001
 
-### 7.1 BLE Service Design
+### 7.1 Canonical QD001 text-v1 BLE Service Design
 
 ```
 Service: QD001 Control (custom 128-bit UUID)
 ├── Command Characteristic (WRITE_NR)
 │   ├── Format: "F,200" or single char "S"
-│   ├── Directions: F(ward), B(ack), L(eft), R(ight), S(top), TL, TR
-│   └── Speed: 0-255, default 150
+│   ├── Directions: F(ward), B(ack), L(spin left), R(spin right), S(top)
+│   └── Speed: 100-255, default 150
 │
 ├── Telemetry Characteristic (NOTIFY)
-│   ├── Binary struct: {distance: u16, ir_left: u8, ir_right: u8, line: u8}
+│   ├── CSV text: "distance,ir_left,ir_right"
 │   └── Rate: 10Hz (100ms interval)
-│
-└── Config Characteristic (WRITE)
-    ├── WiFi credentials provisioning
-    └── PID tuning parameters
 ```
+
+Keep callbacks short: copy/enqueue command bytes only. The firmware `loop()`
+owns connection flags, motor calls, 500 ms failsafe, and telemetry publication.
 
 ### 7.2 BLE Protocol vs WiFi Protocol
 
@@ -413,12 +432,12 @@ Service: QD001 Control (custom 128-bit UUID)
 | Multi-client | Unlimited | 7-8 devices |
 | Setup | Connect to AP | Scan + Pair |
 
-### 7.3 Migration Path
+### 7.3 Reference binary-v2 stack boundary
 
-1. **Phase 1**: Add BLE service alongside WiFi (parallel)
-2. **Phase 2**: Test BLE motor control with Python client
-3. **Phase 3**: Build iOS/Flutter app for BLE control
-4. **Phase 4**: Optional — remove WiFi if BLE-only is sufficient
+The binary examples are useful for learning packed telemetry and Swift/Core
+Bluetooth parsing, but they are not QD001-compatible as-is. They use a generic
+dual-H-bridge pin map, a separate UUID set, and binary telemetry. Do not document
+or test them as if they matched `sketches/ble-gatt-control/ble-gatt-control.ino`.
 
 ---
 
@@ -426,11 +445,13 @@ Service: QD001 Control (custom 128-bit UUID)
 
 | File | Description |
 |------|-------------|
-| `ble-motor-control-basic.ino` | Minimal ESP32 BLE motor control sketch |
-| `ble-motor-control-nimble.ino` | NimBLE version with optimized performance |
-| `ble-nus-serial.ino` | Nordic UART Service implementation |
-| `ble_motor_controller.py` | Python bleak client for motor control |
-| `ios-ble-swift.swift` | iOS Core Bluetooth manager (Swift) |
+| `../../sketches/ble-gatt-control/ble-gatt-control.ino` | Canonical QD001 text-v1 BLE firmware |
+| `../../scripts/ble_client.py` | Canonical QD001 text-v1 Python client |
+| `ble-motor-control-basic.ino` | Generic reference/binary-v2 ESP32 BLE motor control sketch |
+| `ble-motor-control-nimble.ino` | External/future example idea; not present in this repository |
+| `ble-nus-serial.ino` | External/future NUS example idea; not present in this repository |
+| `ble_motor_controller.py` | Reference/binary-v2 Python bleak client |
+| `ios-ble-swift.swift` | Reference/binary-v2 iOS Core Bluetooth manager (Swift) |
 
 ---
 

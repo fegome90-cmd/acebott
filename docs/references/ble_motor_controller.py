@@ -1,12 +1,16 @@
 """
-BLE Motor Controller for Acebott QD001 ESP32
-Python client using bleak library for macOS/Linux/Windows
+Reference/binary-v2 BLE motor controller for a generic ESP32 robot.
+
+This file is intentionally NOT the canonical QD001 firmware/client protocol.
+The active QD001 stack uses sketches/ble-gatt-control/ble-gatt-control.ino and
+scripts/ble_client.py with text-v1 UUIDs and CSV telemetry.
 
 Usage:
     python3 ble_motor_controller.py
 
 Commands:
     F,B,L,R,S = Forward, Backward, Left, Right, Stop
+    T,Y = Spin left, spin right for the generic reference sketch
     F,200 = Forward at speed 200 (0-255)
     quit = Exit
 
@@ -17,16 +21,46 @@ Requirements:
 import asyncio
 import struct
 import sys
-from bleak import BleakScanner, BleakClient
+from dataclasses import dataclass
 
-# === BLE UUIDs (must match ESP32 firmware) ===
+try:
+    from bleak import BleakScanner, BleakClient
+except ImportError:  # pragma: no cover - only needed for real BLE I/O
+    BleakScanner = None
+    BleakClient = None
+
+# === Reference/binary-v2 BLE UUIDs (must match ble-motor-control-basic.ino) ===
 SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214"
 CHAR_COMMAND_UUID = "19b10002-e8f2-537e-4f6c-d104768a1214"
 CHAR_TELEMETRY_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214"
 
-# === Telemetry struct (packed binary, matches ESP32) ===
-TELEMETRY_FORMAT = "<HBBBxB"  # u16, u8, u8, u8, padding, u8
+# === Telemetry struct (packed binary, exactly 6 bytes) ===
+TELEMETRY_FORMAT = "<HBBBB"  # u16 distance + four u8 fields, no padding
 TELEMETRY_SIZE = struct.calcsize(TELEMETRY_FORMAT)
+
+
+@dataclass(frozen=True)
+class BinaryTelemetry:
+    distance: int
+    ir_left: int
+    ir_right: int
+    line_center: int
+    battery: int
+
+
+def parse_telemetry(data: bytes) -> BinaryTelemetry:
+    """Parse reference/binary-v2 telemetry packed by the generic ESP32 sketch."""
+    if len(data) != TELEMETRY_SIZE:
+        raise ValueError(f"expected {TELEMETRY_SIZE} telemetry bytes, got {len(data)}")
+    distance, ir_left, ir_right, line_center, battery = struct.unpack(
+        TELEMETRY_FORMAT, data
+    )
+    return BinaryTelemetry(distance, ir_left, ir_right, line_center, battery)
+
+
+def require_bleak():
+    if BleakScanner is None or BleakClient is None:
+        raise SystemExit("Missing dependency: install bleak before using BLE I/O")
 
 
 class BLEMotorController:
@@ -37,27 +71,25 @@ class BLEMotorController:
 
     def notification_handler(self, sender, data):
         """Handle incoming telemetry notifications."""
-        if len(data) >= TELEMETRY_SIZE:
-            distance, ir_left, ir_right, line_center, _, battery = struct.unpack(
-                TELEMETRY_FORMAT, data[:TELEMETRY_SIZE]
-            )
-            self.telemetry = {
-                "distance": distance,
-                "ir_left": ir_left,
-                "ir_right": ir_right,
-                "line_center": line_center,
-                "battery": battery,
-            }
-            # Print telemetry
-            print(
-                f"\r  Dist: {distance:4d}cm | IR: L={ir_left} R={ir_right} "
-                f"| Line: {line_center:3d} | Batt: {battery}",
-                end="",
-                flush=True,
-            )
+        telemetry = parse_telemetry(bytes(data))
+        self.telemetry = {
+            "distance": telemetry.distance,
+            "ir_left": telemetry.ir_left,
+            "ir_right": telemetry.ir_right,
+            "line_center": telemetry.line_center,
+            "battery": telemetry.battery,
+        }
+        print(
+            f"\r  Dist: {telemetry.distance:4d}cm | "
+            f"IR: L={telemetry.ir_left} R={telemetry.ir_right} "
+            f"| Line: {telemetry.line_center:3d} | Batt: {telemetry.battery}",
+            end="",
+            flush=True,
+        )
 
     async def scan(self, timeout=5.0):
         """Scan for ESP32 BLE device."""
+        require_bleak()
         print(f"Scanning for QD001_Robot ({timeout}s)...")
         devices = await BleakScanner.discover(timeout=timeout)
         for d in devices:
@@ -106,7 +138,7 @@ class BLEMotorController:
     async def interactive_mode(self):
         """Interactive command line mode."""
         print("\n=== BLE Motor Controller ===")
-        print("Commands: F,B,L,R,S,F,200,B,100 etc.")
+        print("Commands: F,B,L,R,S,T,Y,F,200,B,100 etc.")
         print("Type 'quit' to exit\n")
 
         loop = asyncio.get_event_loop()

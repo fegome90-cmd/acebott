@@ -1,38 +1,153 @@
 #!/usr/bin/env python3
 """
-BLE GATT Client for Acebott QD001 Robot Control
+Canonical text-v1 BLE GATT client for Acebott QD001 robot control.
 
-Connects to QD001-BLE over Bluetooth Low Energy and sends motor commands.
-Compatible with macOS (Core Bluetooth), Linux, Windows.
-
-Usage:
-    python ble_client.py                    # Interactive mode
-    python ble_client.py --scan             # Scan for devices
-    python ble_client.py --connect          # Connect and send test commands
-
-Requirements:
-    pip install bleak
-
-Hardware: Acebott QD001 ESP32 MAX V1.0
-Firmware: ble-gatt-control.ino
+Matches sketches/ble-gatt-control/ble-gatt-control.ino:
+- Device name: QD001-BLE
+- Commands: ASCII text ("F,150", "B,150", "L,150", "R,150", or "S")
+- Telemetry: UTF-8 CSV ("distance,ir_left,ir_right")
+- Safety: commands are retransmitted every 200 ms while active so the firmware's
+  500 ms failsafe does not stop motion mid-command; "S" is sent on exit.
 """
 
-import asyncio
 import argparse
+import asyncio
 import sys
-from bleak import BleakClient, BleakScanner
+from dataclasses import dataclass
+from typing import Optional
 
-# Service and Characteristic UUIDs (must match firmware)
+try:
+    from bleak import BleakClient, BleakScanner
+except ImportError:  # pragma: no cover - exercised only on machines without bleak
+    BleakClient = None
+    BleakScanner = None
+
+
+# Service and characteristic UUIDs for the canonical QD001 text-v1 firmware.
 SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab"
 COMMAND_UUID = "abcd1234-5678-90ab-cdef-1234567890ab"
 TELEMETRY_UUID = "c8f60001-1234-5678-9abc-def012345678"
 
-# Default device name
 DEVICE_NAME = "QD001-BLE"
+HEARTBEAT_INTERVAL_SECONDS = 0.2  # below the firmware's 500 ms failsafe
 
 
-async def scan_for_devices(timeout=5.0):
-    """Scan for BLE devices and return list."""
+@dataclass(frozen=True)
+class CsvTelemetry:
+    distance_cm: int
+    ir_left: int
+    ir_right: int
+
+
+def parse_csv_telemetry(data: bytes) -> CsvTelemetry:
+    """Parse canonical text-v1 CSV telemetry: distance,ir_left,ir_right."""
+    text = data.decode("utf-8", errors="strict").strip()
+    fields = text.split(",")
+    if len(fields) != 3:
+        raise ValueError(f"expected 3 CSV fields, got {len(fields)}: {text!r}")
+    distance, ir_left, ir_right = (int(field) for field in fields)
+    return CsvTelemetry(distance, ir_left, ir_right)
+
+
+def normalize_command(command: str) -> str:
+    """Validate and normalize a canonical text-v1 command."""
+    value = command.strip().upper()
+    if not value:
+        raise ValueError("empty command")
+
+    parts = value.split(",", 1)
+    op = parts[0]
+    if op not in {"F", "B", "L", "R", "S"}:
+        raise ValueError(f"unknown command {op!r}; expected F, B, L, R, or S")
+
+    if op == "S":
+        if len(parts) == 1:
+            return op
+        raise ValueError("stop command does not accept a speed")
+
+    if len(parts) == 1:
+        raise ValueError("movement commands require a comma and speed, e.g. F,150")
+
+    if parts[1] == "" or not parts[1].isdigit():
+        raise ValueError("speed must be numeric")
+
+    speed = int(parts[1])
+    if not 100 <= speed <= 255:
+        raise ValueError("speed must be 100..255 for QD001 text-v1 firmware")
+    return f"{op},{speed}"
+
+
+def notification_handler(characteristic, data: bytearray):
+    """Handle telemetry notifications from the canonical firmware."""
+    try:
+        telemetry = parse_csv_telemetry(bytes(data))
+    except (UnicodeDecodeError, ValueError) as exc:
+        print(f"  Telemetry parse error: {exc}")
+        return
+
+    print(
+        "  Telemetry: "
+        f"distance={telemetry.distance_cm}cm, "
+        f"IR_L={telemetry.ir_left}, IR_R={telemetry.ir_right}"
+    )
+
+
+async def async_input(prompt: str) -> str:
+    """Read one input line without blocking the asyncio event loop."""
+    print(prompt, end="", flush=True)
+    return await asyncio.to_thread(sys.stdin.readline)
+
+
+async def write_command(client, command: str) -> None:
+    """Write command using BLE Write Without Response."""
+    await client.write_gatt_char(
+        COMMAND_UUID,
+        command.encode("utf-8"),
+        response=False,
+    )
+
+
+class CommandHeartbeat:
+    """Retransmit the active command until replaced or stopped."""
+
+    def __init__(self, client, interval: float = HEARTBEAT_INTERVAL_SECONDS):
+        self._client = client
+        self._interval = interval
+        self._active_command: Optional[str] = None
+        self._changed = asyncio.Event()
+        self._stopped = False
+
+    @property
+    def active_command(self) -> Optional[str]:
+        return self._active_command
+
+    async def set_command(self, command: str) -> None:
+        normalized = normalize_command(command)
+        self._active_command = normalized
+        self._changed.set()
+        await write_command(self._client, normalized)
+
+    async def stop(self) -> None:
+        self._active_command = "S"
+        self._stopped = True
+        self._changed.set()
+        await write_command(self._client, "S")
+
+    async def run(self) -> None:
+        while not self._stopped:
+            try:
+                await asyncio.wait_for(self._changed.wait(), timeout=self._interval)
+                self._changed.clear()
+            except asyncio.TimeoutError:
+                pass
+
+            if self._active_command and self._active_command != "S":
+                await write_command(self._client, self._active_command)
+
+
+async def scan_for_devices(timeout: float = 5.0):
+    """Scan for BLE devices and return the discovered list."""
+    require_bleak()
     print(f"Scanning for {timeout} seconds...")
     devices = await BleakScanner.discover(timeout=timeout)
 
@@ -44,8 +159,8 @@ async def scan_for_devices(timeout=5.0):
     return devices
 
 
-async def find_device(name=DEVICE_NAME, timeout=10.0):
-    """Find specific device by name."""
+async def find_device(name: str = DEVICE_NAME, timeout: float = 10.0):
+    """Find a device by advertised name."""
     devices = await scan_for_devices(timeout)
 
     for device in devices:
@@ -57,100 +172,93 @@ async def find_device(name=DEVICE_NAME, timeout=10.0):
     return None
 
 
-async def notification_handler(characteristic, data):
-    """Handle telemetry notifications from robot."""
-    value = data.decode('utf-8', errors='replace')
-    parts = value.split(',')
-    if len(parts) == 3:
-        distance, ir_left, ir_right = parts
-        print(f"  Telemetry: distance={distance}cm, IR_L={ir_left}, IR_R={ir_right}")
-    else:
-        print(f"  Telemetry: {value}")
-
-
 async def connect_and_control(device):
-    """Connect to device and send interactive commands."""
+    """Connect to the QD001 and run interactive command mode."""
     print(f"\nConnecting to {device.name} ({device.address})...")
 
     async with BleakClient(device, timeout=10.0) as client:
         print(f"Connected: {client.is_connected}")
 
-        # Discover services
         print("\nServices:")
         for service in client.services:
             print(f"  {service.uuid}")
             for char in service.characteristics:
                 print(f"    {char.uuid} | {char.properties}")
 
-        # Subscribe to telemetry notifications
         await client.start_notify(TELEMETRY_UUID, notification_handler)
         print("\nSubscribed to telemetry notifications")
 
-        # Interactive command loop
-        print("\nCommands: F=Forward, B=Backward, L=Left, R=Right, S=Stop")
-        print("          F,200 = Forward at speed 200 (100-255)")
+        print("\nCommands: F,150=Forward, B,150=Backward, L,150=Spin Left, R,150=Spin Right")
+        print("          S=Stop; speeds must be 100-255")
         print("          Q=Quit")
         print("-" * 40)
 
-        while True:
-            try:
-                cmd = input("Command> ").strip().upper()
-
-                if cmd == 'Q':
+        heartbeat = CommandHeartbeat(client)
+        heartbeat_task = asyncio.create_task(heartbeat.run())
+        try:
+            while True:
+                line = await async_input("Command> ")
+                cmd = line.strip()
+                if cmd.upper() == "Q":
                     print("Disconnecting...")
                     break
-
                 if not cmd:
                     continue
-
-                # Send command
-                await client.write_gatt_char(COMMAND_UUID, cmd.encode('utf-8'))
-                print(f"  Sent: {cmd}")
-
-            except KeyboardInterrupt:
-                print("\nInterrupted")
-                break
-            except Exception as e:
-                print(f"  Error: {e}")
-
-        # Stop motors on disconnect
-        await client.write_gatt_char(COMMAND_UUID, b'S')
-        print("Motors stopped")
+                try:
+                    await heartbeat.set_command(cmd)
+                    print(f"  Sent: {heartbeat.active_command}")
+                except ValueError as exc:
+                    print(f"  Invalid command: {exc}")
+        except KeyboardInterrupt:
+            print("\nInterrupted")
+        finally:
+            await heartbeat.stop()
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            print("Motors stopped")
 
 
 async def send_test_commands(device):
-    """Send test commands to verify connectivity."""
+    """Send a short test sequence with retransmit below the 500 ms failsafe."""
     print(f"\nConnecting to {device.name}...")
 
     async with BleakClient(device, timeout=10.0) as client:
         print(f"Connected: {client.is_connected}")
-
-        # Subscribe to telemetry
         await client.start_notify(TELEMETRY_UUID, notification_handler)
 
-        # Test sequence
-        commands = [
-            ("F,150", "Forward at 150"),
-            ("", "Wait 1s"),
-            ("S", "Stop"),
-            ("", "Wait 0.5s"),
-            ("R,150", "Right at 150"),
-            ("", "Wait 0.5s"),
-            ("S", "Stop"),
-        ]
-
-        for cmd, desc in commands:
-            print(f"\n  {desc}...")
-            if cmd:
-                await client.write_gatt_char(COMMAND_UUID, cmd.encode('utf-8'))
-                print(f"    Sent: {cmd}")
-            await asyncio.sleep(1.0)
+        heartbeat = CommandHeartbeat(client)
+        heartbeat_task = asyncio.create_task(heartbeat.run())
+        try:
+            for command, duration, desc in [
+                ("F,150", 1.0, "Forward at 150"),
+                ("S", 0.5, "Stop"),
+                ("R,150", 0.5, "Spin right at 150"),
+                ("S", 0.2, "Stop"),
+            ]:
+                print(f"\n  {desc}...")
+                await heartbeat.set_command(command)
+                await asyncio.sleep(duration)
+        finally:
+            await heartbeat.stop()
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
 
         print("\nTest complete!")
 
 
+def require_bleak() -> None:
+    if BleakClient is None or BleakScanner is None:
+        raise SystemExit("Missing dependency: install bleak before using BLE I/O")
+
+
 async def main():
-    parser = argparse.ArgumentParser(description="BLE GATT Client for QD001")
+    parser = argparse.ArgumentParser(description="Canonical BLE GATT client for QD001")
     parser.add_argument("--scan", action="store_true", help="Scan for devices")
     parser.add_argument("--connect", action="store_true", help="Connect interactively")
     parser.add_argument("--test", action="store_true", help="Send test commands")
@@ -163,7 +271,6 @@ async def main():
         await scan_for_devices(args.timeout)
         return
 
-    # Find device
     device = await find_device(args.name, args.timeout)
     if not device:
         sys.exit(1)

@@ -1,15 +1,20 @@
 /*
- * BLE GATT Motor Control for Acebott QD001 ESP32 MAX V1.0
+ * Reference/binary-v2 BLE GATT Motor Control for a generic ESP32 robot
  *
- * Minimal working example using Bluedroid (default Arduino BLE library).
+ * Minimal Bluedroid example. This is NOT the canonical QD001 firmware.
+ * The active QD001 stack is sketches/ble-gatt-control/ble-gatt-control.ino:
+ *   - UUIDs: 12345678... / abcd1234... / c8f60001...
+ *   - Commands: text-v1 F/B/L/R/S
+ *   - Telemetry: CSV text
  *
- * Protocol:
+ * Reference/binary-v2 protocol:
  *   Client → ESP32: Single char commands on Command Characteristic
  *     F,B,L,R,S = Forward, Backward, Left, Right, Stop
  *     F,200 = Forward at speed 200 (0-255)
- *   ESP32 → Client: Binary telemetry on Telemetry Characteristic (NOTIFY)
+ *   ESP32 → Client: packed 6-byte binary telemetry on Telemetry Characteristic
  *
- * Hardware: Acebott QD001 with L298N motor driver
+ * Hardware: generic ESP32 + external dual H-bridge. Pin choices below avoid the
+ * documented QD001 GPIOs so this reference cannot be confused with QD001 wiring.
  * Stack: Bluedroid (default in Arduino ESP32 core 2.0.18)
  */
 
@@ -23,20 +28,20 @@
 #define CHAR_COMMAND_UUID     "19b10002-e8f2-537e-4f6c-d104768a1214"
 #define CHAR_TELEMETRY_UUID   "19b10001-e8f2-537e-4f6c-d104768a1214"
 
-// === Motor Pins (Acebott QD001 L298N) ===
-#define ENA 12
-#define IN1 27
-#define IN2 26
-#define ENB 13
-#define IN3 25
-#define IN4 33
+// === Generic dual H-bridge motor pins ===
+#define ENA 16
+#define IN1 17
+#define IN2 18
+#define ENB 19
+#define IN3 21
+#define IN4 22
 
-// === Sensor Pins ===
-#define TRIG_PIN 13
-#define ECHO_PIN 14
-#define IR_LEFT_PIN 35
-#define IR_RIGHT_PIN 34
-#define LINE_CENTER_PIN 32
+// === Generic sensor pins ===
+#define TRIG_PIN 23
+#define ECHO_PIN 34
+#define IR_LEFT_PIN 27
+#define IR_RIGHT_PIN 32
+#define LINE_CENTER_PIN 5
 
 // === BLE Globals ===
 BLEServer* pServer = nullptr;
@@ -79,14 +84,16 @@ void turnRight(int speed) {
 }
 
 void spinLeft(int speed) {
+  // Differential-drive spin: left motor backward, right motor forward.
   digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);  // Fixed: both backward for spin
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
   analogWrite(ENA, speed); analogWrite(ENB, speed);
 }
 
 void spinRight(int speed) {
+  // Differential-drive spin: left motor forward, right motor backward.
   digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  // Fixed: both forward for spin
+  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
   analogWrite(ENA, speed); analogWrite(ENB, speed);
 }
 
@@ -124,7 +131,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 class CommandCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
-    std::string value = pCharacteristic->getValue();
+    String value = pCharacteristic->getValue();
     if (value.length() < 1) return;
 
     char cmd = value[0];
@@ -132,7 +139,7 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
 
     // Parse optional speed: "F,200" or just "F"
     if (value.length() > 2 && value[1] == ',') {
-      speed = atoi(value.substr(2).c_str());
+      speed = value.substring(2).toInt();
       speed = constrain(speed, 0, 255);
     }
 
@@ -155,7 +162,7 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
 // === Setup ===
 void setup() {
   Serial.begin(115200);
-  Serial.println("BLE Motor Control - Acebott QD001");
+  Serial.println("BLE Motor Control - generic reference/binary-v2");
 
   // Motor pins
   pinMode(ENA, OUTPUT); pinMode(ENB, OUTPUT);

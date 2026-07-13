@@ -1,18 +1,27 @@
 /*
- * BLE GATT Motor Control for Acebott QD001
+ * Canonical text-v1 BLE GATT Motor Control for Acebott QD001.
  *
- * Creates a BLE GATT server with:
- * - Command characteristic (WRITE) for motor commands
- * - Telemetry characteristic (READ/NOTIFY) for sensor data
+ * Protocol:
+ *   Command characteristic (WRITE/WRITE_NR):
+ *     "F,200" = Forward
+ *     "B,200" = Backward
+ *     "L,200" = Spin Left  (ACB_SmartCar.Move(Contrarotate, speed))
+ *     "R,200" = Spin Right (ACB_SmartCar.Move(Clockwise, speed))
+ *     "S"     = Stop
+ *   Telemetry characteristic (READ/NOTIFY):
+ *     UTF-8 CSV: "distance,ir_left,ir_right"
  *
- * Compatible with iOS (Core Bluetooth), macOS (Core Bluetooth), Android, Python (bleak)
+ * Safety:
+ *   - Client should retransmit active movement commands every <=200 ms.
+ *   - Firmware stops after 500 ms without a command.
+ *   - Invalid or unknown commands stop the motors and do not refresh the failsafe.
+ *   - Disconnect wins over queued writes: loop() drops pending commands before
+ *     stopping and never applies stale movement while disconnected.
+ *   - BLE callbacks only copy/enqueue data; loop() owns motor calls, failsafe,
+ *     telemetry, and connection state transitions.
  *
- * Protocol: Single ASCII char commands + optional speed
- *   'F' = Forward, 'B' = Backward, 'L' = Spin Left, 'R' = Spin Right, 'S' = Stop
- *   'F,200' = Forward at speed 200
- *
- * Hardware: Acebott QD001 ESP32 MAX V1.0
- * Library: ACB_SmartCar_V2 (built-in), BLEDevice (built-in)
+ * QD001 gotcha: short turn/spin pulses may not register physically. Use at
+ * least ~150 ms pulses for deliberate turns, then send "S".
  */
 
 #include <BLEDevice.h>
@@ -20,115 +29,266 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <ACB_SmartCar_V2.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 
-// BLE Service and Characteristics
 #define SERVICE_UUID        "12345678-1234-1234-1234-1234567890ab"
 #define COMMAND_UUID        "abcd1234-5678-90ab-cdef-1234567890ab"
 #define TELEMETRY_UUID      "c8f60001-1234-5678-9abc-def012345678"
 
-// Motor control
+const unsigned long FAILSAFE_TIMEOUT_MS = 500;
+const unsigned long TELEMETRY_INTERVAL_MS = 100;
+const int DEFAULT_SPEED = 150;
+const int MIN_SPEED = 100;
+const int MAX_SPEED = 255;
+const size_t COMMAND_BUFFER_SIZE = 16;
+
 ACB_SmartCar_V2 ACB_SmartCar;
-int currentSpeed = 150;  // Default speed
-unsigned long lastCommandTime = 0;
-const unsigned long FAILSAFE_TIMEOUT = 500;  // Stop after 500ms without commands
+BLECharacteristic* telemetryChar = nullptr;
 
-// BLE objects
-BLECharacteristic* commandChar;
-BLECharacteristic* telemetryChar;
+portMUX_TYPE bleMux = portMUX_INITIALIZER_UNLOCKED;
+char pendingCommand[COMMAND_BUFFER_SIZE] = {0};
+volatile bool commandPending = false;
+volatile bool connectPending = false;
+volatile bool disconnectPending = false;
+
 bool deviceConnected = false;
+int currentSpeed = DEFAULT_SPEED;
+unsigned long lastCommandTime = 0;
+unsigned long lastTelemetryTime = 0;
 
-// BLE Server callbacks
 class ServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer* pServer) {
+  void onConnect(BLEServer* pServer) override {
+    portENTER_CRITICAL(&bleMux);
+    connectPending = true;
+    portEXIT_CRITICAL(&bleMux);
+  }
+
+  void onDisconnect(BLEServer* pServer) override {
+    portENTER_CRITICAL(&bleMux);
+    disconnectPending = true;
+    portEXIT_CRITICAL(&bleMux);
+  }
+};
+
+class CommandCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) override {
+    String value = pCharacteristic->getValue();
+    if (value.length() == 0) {
+      return;
+    }
+
+    char local[COMMAND_BUFFER_SIZE] = {0};
+    size_t copyLength = value.length();
+    if (copyLength >= COMMAND_BUFFER_SIZE) {
+      copyLength = COMMAND_BUFFER_SIZE - 1;
+    }
+    memcpy(local, value.c_str(), copyLength);
+
+    portENTER_CRITICAL(&bleMux);
+    memcpy(pendingCommand, local, COMMAND_BUFFER_SIZE);
+    commandPending = true;
+    portEXIT_CRITICAL(&bleMux);
+  }
+};
+
+void applyMotorCommand(char cmd, int speed) {
+  switch (cmd) {
+    case 'F':
+      ACB_SmartCar.Move(Forward, speed);
+      break;
+    case 'B':
+      ACB_SmartCar.Move(Backward, speed);
+      break;
+    case 'L':
+      ACB_SmartCar.Move(Contrarotate, speed);
+      break;
+    case 'R':
+      ACB_SmartCar.Move(Clockwise, speed);
+      break;
+    case 'S':
+      ACB_SmartCar.Move(Stop, 0);
+      break;
+  }
+}
+
+bool parseCommand(const char* rawCommand, char* cmd, int* speed) {
+  if (rawCommand == nullptr || rawCommand[0] == '\0') {
+    return false;
+  }
+
+  *cmd = toupper((unsigned char)rawCommand[0]);
+  *speed = currentSpeed;
+
+  if (*cmd == 'S') {
+    *speed = 0;
+    return rawCommand[1] == '\0';
+  }
+
+  if (*cmd != 'F' && *cmd != 'B' && *cmd != 'L' && *cmd != 'R') {
+    return false;
+  }
+
+  if (rawCommand[1] != ',' || rawCommand[2] == '\0') {
+    return false;
+  }
+
+  for (const char* cursor = rawCommand + 2; *cursor != '\0'; cursor++) {
+    if (!isdigit((unsigned char)*cursor)) {
+      return false;
+    }
+  }
+
+  char* end = nullptr;
+  long requestedSpeed = strtol(rawCommand + 2, &end, 10);
+  if (*end != '\0') {
+    return false;
+  }
+  if (requestedSpeed < MIN_SPEED || requestedSpeed > MAX_SPEED) {
+    return false;
+  }
+
+  currentSpeed = requestedSpeed;
+  *speed = currentSpeed;
+  return true;
+}
+
+void rejectCommand(const char* rawCommand) {
+  // Safe behavior: invalid input stops the robot and clears the failsafe timer
+  // instead of extending movement with malformed or unknown commands.
+  ACB_SmartCar.Move(Stop, 0);
+  lastCommandTime = 0;
+  Serial.print("[BLE] Invalid command stopped motors: ");
+  Serial.println(rawCommand);
+}
+
+void processCommand(const char* rawCommand) {
+  char cmd = 'S';
+  int speed = currentSpeed;
+  if (!parseCommand(rawCommand, &cmd, &speed)) {
+    rejectCommand(rawCommand);
+    return;
+  }
+
+  lastCommandTime = millis();
+  applyMotorCommand(cmd, speed);
+
+  Serial.print("[BLE] Command: ");
+  Serial.print(cmd);
+  Serial.print(", Speed: ");
+  Serial.println(speed);
+}
+
+void processBleEvents() {
+  bool localConnect = false;
+  bool localDisconnect = false;
+  bool localCommandPending = false;
+  char localCommand[COMMAND_BUFFER_SIZE] = {0};
+
+  portENTER_CRITICAL(&bleMux);
+  if (connectPending) {
+    localConnect = true;
+    connectPending = false;
+    memset(pendingCommand, 0, COMMAND_BUFFER_SIZE);
+    commandPending = false;
+  }
+  if (disconnectPending) {
+    localDisconnect = true;
+    disconnectPending = false;
+    memset(pendingCommand, 0, COMMAND_BUFFER_SIZE);
+    commandPending = false;
+  }
+  if (!localDisconnect && commandPending) {
+    memcpy(localCommand, pendingCommand, COMMAND_BUFFER_SIZE);
+    memset(pendingCommand, 0, COMMAND_BUFFER_SIZE);
+    commandPending = false;
+    localCommandPending = true;
+  }
+  portEXIT_CRITICAL(&bleMux);
+
+  if (localConnect) {
     deviceConnected = true;
+    lastCommandTime = 0;
     Serial.println("[BLE] Client connected");
   }
 
-  void onDisconnect(BLEServer* pServer) {
+  if (localDisconnect) {
+    // Disconnect wins deterministically: drop any command copied this loop,
+    // stop motors, clear failsafe state, and return before command processing.
+    localCommandPending = false;
+    localCommand[0] = '\0';
     deviceConnected = false;
-    ACB_SmartCar.Move(Stop, 0);  // Safety: stop on disconnect
-    Serial.println("[BLE] Client disconnected, motors stopped");
-
-    // Restart advertising for reconnection
+    ACB_SmartCar.Move(Stop, 0);
+    lastCommandTime = 0;
+    Serial.println("[BLE] Client disconnected, pending commands dropped, motors stopped");
     BLEDevice::startAdvertising();
+    return;
   }
-};
 
-// Command characteristic callbacks
-class CommandCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic* pCharacteristic) {
-    String value = pCharacteristic->getValue().c_str();
-    if (value.length() == 0) return;
-
-    lastCommandTime = millis();  // Reset failsafe timer
-
-    // Parse command: "F" or "F,200"
-    char cmd = value[0];
-    int speed = currentSpeed;  // Default to current speed
-
-    // Check for speed parameter (after comma)
-    int commaIndex = value.indexOf(',');
-    if (commaIndex > 0 && commaIndex < value.length() - 1) {
-      int newSpeed = value.substring(commaIndex + 1).toInt();
-      if (newSpeed >= 100 && newSpeed <= 255) {
-        currentSpeed = newSpeed;
-        speed = currentSpeed;
-      }
+  if (localCommandPending) {
+    if (deviceConnected) {
+      processCommand(localCommand);
+    } else {
+      Serial.println("[BLE] Dropped command while disconnected");
     }
-
-    // Execute command
-    switch (cmd) {
-      case 'F': ACB_SmartCar.Move(Forward, speed); break;
-      case 'B': ACB_SmartCar.Move(Backward, speed); break;
-      case 'L': ACB_SmartCar.Move(Contrarotate, speed); break;
-      case 'R': ACB_SmartCar.Move(Clockwise, speed); break;
-      case 'S': ACB_SmartCar.Move(Stop, 0); break;
-      default:
-        Serial.print("[BLE] Unknown command: ");
-        Serial.println(cmd);
-        break;
-    }
-
-    // Echo command to serial for debugging
-    Serial.print("[BLE] Command: ");
-    Serial.print(cmd);
-    Serial.print(", Speed: ");
-    Serial.println(speed);
   }
-};
+}
+
+void processFailsafe() {
+  if (lastCommandTime > 0 && millis() - lastCommandTime > FAILSAFE_TIMEOUT_MS) {
+    ACB_SmartCar.Move(Stop, 0);
+    lastCommandTime = 0;
+    Serial.println("[BLE] Failsafe: no command received, motors stopped");
+  }
+}
+
+void publishTelemetry() {
+  if (!deviceConnected || telemetryChar == nullptr) {
+    return;
+  }
+
+  unsigned long now = millis();
+  if (now - lastTelemetryTime < TELEMETRY_INTERVAL_MS) {
+    return;
+  }
+  lastTelemetryTime = now;
+
+  int distance = 0;  // CSV text-v1 placeholder until hardware sensor read is wired.
+  int irLeft = 0;
+  int irRight = 0;
+
+  String telemetry = String(distance) + "," + String(irLeft) + "," + String(irRight);
+  telemetryChar->setValue(telemetry.c_str());
+  telemetryChar->notify();
+}
 
 void setup() {
   Serial.begin(115200);
   ACB_SmartCar.Init();
+  ACB_SmartCar.Move(Stop, 0);
 
-  // Initialize BLE
   BLEDevice::init("QD001-BLE");
 
-  // Create BLE server
   BLEServer* pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
-  // Create BLE service
   BLEService* pService = pServer->createService(SERVICE_UUID);
 
-  // Create command characteristic (WRITE)
-  commandChar = pService->createCharacteristic(
+  BLECharacteristic* commandChar = pService->createCharacteristic(
     COMMAND_UUID,
     BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
   );
   commandChar->setCallbacks(new CommandCallbacks());
 
-  // Create telemetry characteristic (READ/NOTIFY)
   telemetryChar = pService->createCharacteristic(
     TELEMETRY_UUID,
     BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
   );
   telemetryChar->addDescriptor(new BLE2902());
 
-  // Start service
   pService->start();
 
-  // Start advertising
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
@@ -137,30 +297,14 @@ void setup() {
   BLEDevice::startAdvertising();
 
   Serial.println("[BLE] Ready — waiting for connection");
-  Serial.print("[BLE] Device name: QD001-BLE");
+  Serial.println("[BLE] Device name: QD001-BLE");
   Serial.print("[BLE] Service UUID: ");
   Serial.println(SERVICE_UUID);
 }
 
 void loop() {
-  // Failsafe: stop motors if no command received within timeout
-  if (lastCommandTime > 0 && (millis() - lastCommandTime > FAILSAFE_TIMEOUT)) {
-    ACB_SmartCar.Move(Stop, 0);
-    lastCommandTime = 0;  // Reset to avoid repeated stops
-    Serial.println("[BLE] Failsafe: no command received, motors stopped");
-  }
-
-  // Send telemetry every 100ms if connected
-  if (deviceConnected) {
-    // TODO: Read actual sensor data
-    int distance = 0;  // Replace with Ultrasonic.Ranging()
-    int ir_left = 0;   // Replace with analogRead(Left_Line)
-    int ir_right = 0;  // Replace with analogRead(Right_Line)
-
-    String telemetry = String(distance) + "," + String(ir_left) + "," + String(ir_right);
-    telemetryChar->setValue(telemetry.c_str());
-    telemetryChar->notify();
-  }
-
-  delay(100);  // 10Hz telemetry rate
+  processBleEvents();
+  processFailsafe();
+  publishTelemetry();
+  delay(10);
 }

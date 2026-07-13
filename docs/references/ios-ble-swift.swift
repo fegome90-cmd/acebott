@@ -1,18 +1,27 @@
 /*
- * iOS BLE Manager for Acebott QD001 Robot Control
+ * Reference/binary-v2 iOS BLE Manager for a generic ESP32 robot.
  * Swift + Core Bluetooth
+ *
+ * This sample matches docs/references/ble-motor-control-basic.ino.
+ * It is NOT the canonical QD001 text-v1 stack. The active QD001 firmware uses
+ * sketches/ble-gatt-control/ble-gatt-control.ino with CSV telemetry and the
+ * 12345678... service UUID.
  *
  * Usage:
  *   1. Add to Xcode project
  *   2. Add "NSBluetoothAlwaysUsageDescription" to Info.plist
  *   3. Call BLEManager.shared.startScanning()
  *   4. Call BLEManager.shared.sendCommand("F,200")
+ *
+ * Commands: F/B/L/R/S for forward/backward/left/right/stop; T/Y are
+ * generic reference spin-left/spin-right commands.
  */
 
 import Foundation
 import CoreBluetooth
+import Combine
 
-// MARK: - UUIDs (must match ESP32 firmware)
+// MARK: - UUIDs (reference/binary-v2, must match ble-motor-control-basic.ino)
 
 enum QD001UUIDs {
     static let serviceUUID = CBUUID(string: "19b10000-e8f2-537e-4f6c-d104768a1214")
@@ -30,8 +39,10 @@ struct RobotTelemetry {
     let battery: UInt8
 
     init?(data: Data) {
-        guard data.count >= 6 else { return nil }
-        self.distance = data.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt16.self) }
+        guard data.count == 6 else { return nil }
+
+        // Safe for unaligned Data buffers and explicit little-endian protocol order.
+        self.distance = UInt16(data[0]) | (UInt16(data[1]) << 8)
         self.irLeft = data[2]
         self.irRight = data[3]
         self.lineCenter = data[4]
@@ -114,6 +125,8 @@ class BLEManager: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     func moveBackward(speed: Int = 150) { sendCommand("B,\(speed)") }
     func turnLeft(speed: Int = 150) { sendCommand("L,\(speed)") }
     func turnRight(speed: Int = 150) { sendCommand("R,\(speed)") }
+    func spinLeft(speed: Int = 150) { sendCommand("T,\(speed)") }
+    func spinRight(speed: Int = 150) { sendCommand("Y,\(speed)") }
     func stop() { sendCommand("S") }
 
     // MARK: - CBCentralManagerDelegate
