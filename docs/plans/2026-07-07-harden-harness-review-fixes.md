@@ -1,10 +1,16 @@
-# Harden Harness Review Fixes — Implementation Plan
+# Harden Harness Review Fixes — Historical Implementation Record
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+<!-- markdownlint-disable MD010 -->
 
-**Goal:** Fix 6 findings from the multi-review of `harden-harness-and-docs` — 1 critical bug (early-abort passes `undefined` to `terminateChild`), 4 major issues, and 1 test gap — without regressing the 224 passing tests.
+> **Historical snapshot (2026-07-07):** This file preserves the remediation
+> plan and evidence for fixes that have already been applied. It is not an
+> executable plan. Treat every command block below as historical evidence only;
+> do not rerun or re-stage these steps from this document without a fresh
+> branch-state review.
 
-**Architecture:** The fixes are surgical and ordered by dependency. Fix 2 (null-guard in `terminateChild`) is the foundation — it makes `terminateChild` truly non-throwing for any input, which Fix 1 (serial early-abort) then relies on. Fixes 3-4 are independent error-handling improvements. Fixes 5-6 are test-quality gaps. Each fix follows RED → GREEN: write/extend a failing test first, then implement, then verify.
+**Historical goal:** Fix 6 findings from the multi-review of `harden-harness-and-docs` — 1 critical bug (early-abort passes `undefined` to `terminateChild`), 4 major issues, and 1 test gap — without regressing the 224 passing tests.
+
+**Architecture:** The fixes are surgical and ordered by dependency. Fix 2 (null-guard in `terminateChild`) is the foundation — it makes `terminateChild` truly non-throwing for any input, which Fix 1 (serial early-abort) then relies on. Fixes 3-4 are independent error-handling improvements. Fixes 5-6 are test-quality gaps. Fixes were executed with RED → GREEN discipline during implementation; this document now records the current source and test evidence for already-applied fixes.
 
 **Tech Stack:** TypeScript 5.x, vitest, biome, Node.js `child_process`. The harness lives under `harness/` and uses `pnpm run build` (tsc), `pnpm run lint` (biome), `pnpm test` (vitest).
 
@@ -20,7 +26,7 @@
 - `harness/tests/unit/health.test.ts` — health orchestration tests
 - `harness/tests/unit/esptool.test.ts` — esptool + artifact validation tests
 
-**Critical context for the implementer:**
+**Historical implementation context:**
 - The harness uses tabs for indentation (biome enforces this). Match it.
 - `terminateChild` is mocked in `serial.test.ts` and wrapper tests — bugs in the real primitive are invisible there. Tests against the real primitive live in `child-process.test.ts`.
 - The `proc` variable in `readSerial` is declared `let proc: ChildProcess | undefined;` (serial.ts:99) and assigned at spawn (serial.ts:205). The early-abort path (serial.ts:180-182) runs before spawn.
@@ -28,221 +34,56 @@
 
 ---
 
-## Task 1: Fix `terminateChild` null-guard (Fix 2 — foundation)
+## Task 1: Verify `terminateChild` null-guard (Fix 2 — foundation) — completed
 
-**Files:**
-- Modify: `harness/src/lib/child-process.ts:140-147` (add guard at top of `terminateChild`)
-- Test: `harness/tests/unit/child-process.test.ts` (add test inside the `describe("terminateChild")` block, before its closing `});`)
+**Status:** Completed before this remediation pass. This section is now verification-only documentation; do not reimplement or re-stage the already-present code.
 
-**Why first:** `terminateChild` is advertised as "MUST NEVER throw" but throws `TypeError` if `proc` is `undefined`. This is the root cause that Fix 1 depends on. Fixing it first makes Fix 1's serial early-abort path safe even if the guard in `finalize` is bypassed.
+**Original issue:** `terminateChild` was advertised as "MUST NEVER throw" but previously dereferenced `proc` through `isClosed(proc)`, which could throw `TypeError` when the caller passed `undefined`. That path was reachable from `readSerial` before a child process was spawned.
 
-### Step 1: Write the failing test
+**Current source evidence:**
+- `harness/src/lib/child-process.ts` has a guard at the top of `terminateChild` that returns `{ status: "already_closed" }` when `proc` is falsy, before calling `isClosed(proc)`.
+- The guard preserves the contract that a missing child process means there is nothing to terminate and must not produce a thrown exception.
 
-Add this test to `harness/tests/unit/child-process.test.ts`, before the closing `});` of the `describe("terminateChild")` block — i.e., immediately after the existing "never throws" test (which closes at line 326) and before the `describe` block's own closing `});` at line 327. The test must go INSIDE the describe block, not after it.
+**Current test evidence:**
+- `harness/tests/unit/child-process.test.ts` includes `never throws when proc is undefined — returns already_closed`.
+- The test calls `terminateChild(undefined as never, { graceMs: 20, killMs: 20 })` and asserts `result.status === "already_closed"`.
 
-```ts
-it("never throws when proc is undefined — returns already_closed", async () => {
-	// terminateChild is contract-bound not to throw for ANY input, including
-	// undefined (which happens in readSerial's pre-spawn abort path).
-	const result = await terminateChild(undefined as never, {
-		graceMs: 20,
-		killMs: 20,
-	});
-
-	expect(result.status).toBe("already_closed");
-});
-```
-
-### Step 2: Run test to verify it fails
-
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/child-process.test.ts -t "never throws when proc is undefined"`
-Expected: FAIL — `TypeError: Cannot read properties of undefined (reading 'exitCode')` thrown from `isClosed(proc)` at line 151.
-
-### Step 3: Implement the null-guard
-
-In `harness/src/lib/child-process.ts`, add a guard at the top of `terminateChild` (after line 148, before line 150):
-
-```ts
-	// Null/undefined guard — readSerial's pre-spawn abort path may call
-	// terminateChild before a process is assigned. No process means nothing
-	// to terminate; treat as already closed (MUST NOT throw, AD3).
-	if (!proc) {
-		return { status: "already_closed" };
-	}
-```
-
-The edited function should read (lines 140-155):
-
-```ts
-export async function terminateChild(
-	proc: ChildProcess,
-	options?: {
-		graceMs?: number;
-		killMs?: number;
-	},
-): Promise<TerminateChildResult> {
-	const graceMs = options?.graceMs ?? 5000;
-	const killMs = options?.killMs ?? 5000;
-
-	// Null/undefined guard — readSerial's pre-spawn abort path may call
-	// terminateChild before a process is assigned. No process means nothing
-	// to terminate; treat as already closed (MUST NOT throw, AD3).
-	if (!proc) {
-		return { status: "already_closed" };
-	}
-
-	// Already closed?
-	if (isClosed(proc)) {
-		return { status: "already_closed" };
-	}
-```
-
-### Step 4: Run test to verify it passes
-
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/child-process.test.ts -t "never throws when proc is undefined"`
-Expected: PASS
-
-### Step 5: Run full child-process suite to verify no regression
-
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/child-process.test.ts`
-Expected: 24 tests pass (was 23, +1 new).
-
-### Step 6: Commit
+**Verification command from repo root:**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
-git add harness/src/lib/child-process.ts harness/tests/unit/child-process.test.ts
-git commit -m "fix(child-process): guard terminateChild against undefined proc
-
-terminateChild is contract-bound to never throw, but isClosed(proc)
-dereferences proc.exitCode — a TypeError on undefined. This is reachable
-via readSerial's pre-spawn abort path. Add a null-guard returning
-already_closed, which is semantically correct (no process = nothing
-to terminate). Found by multi-review silent-failure hunter."
+cd harness && pnpm test tests/unit/child-process.test.ts -t "never throws when proc is undefined"
 ```
+
+**Expected result:** the targeted test passes.
+
+**Traceability:** This verifies Fix 2 from the multi-review remediation: the primitive termination helper no longer throws on `undefined`, and the behavior is locked by a direct primitive-level test rather than only wrapper tests.
 
 ---
 
-## Task 2: Fix `readSerial` early-abort `undefined` proc (Fix 1 — critical)
+## Task 2: Verify `readSerial` early-abort `undefined` proc guard (Fix 1 — critical) — completed
 
-**Files:**
-- Modify: `harness/src/lib/serial.ts:123-155` (guard `finalize` against `proc === undefined`)
-- Test: `harness/tests/unit/serial.test.ts` (add test after line 193)
+**Status:** Completed before this remediation pass. This section is now verification-only documentation; do not reimplement or re-stage the already-present code.
 
-**Why:** When `signal.aborted` is already `true` on entry, `selectResult` → `finalize` runs before `proc` is assigned (spawn at line 205). `finalize` passes `proc as ChildProcess` (actually `undefined`) to `terminateChild`. With Task 1's fix, `terminateChild` no longer throws — but the result is `already_closed`, and `finalize` then resolves with the original `cancelled` result, which is correct. However, calling `terminateChild(undefined)` is still semantically wrong and the `as ChildProcess` cast hides the hazard. We add an explicit guard in `finalize` so the intent is clear and the cast is removed.
+**Original issue:** When `signal.aborted` was already `true` on entry, `selectResult` could resolve before `proc` was assigned. The old `finalize` path passed `proc as ChildProcess` to `terminateChild`, hiding that the value was actually `undefined`.
 
-### Step 1: Write the failing test
+**Current source evidence:**
+- `harness/src/lib/serial.ts` defines `let proc: ChildProcess | undefined` and assigns it only after spawning.
+- `finalize` now clears runtime listeners and timer, then returns early when `!proc`, resolving the selected `SerialReadResult` without invoking `terminateChild`.
+- After that guard, `proc` is narrowed before `terminateChild(proc)` is called, so the unsafe `as ChildProcess` cast is no longer needed in the termination path.
 
-Add this test to `harness/tests/unit/serial.test.ts`, after test "7.6" (line 193):
+**Current test evidence:**
+- `harness/tests/unit/serial.test.ts` includes `7.6b abort before start does not call terminateChild`.
+- The test aborts an `AbortController` before calling `readSerial`, asserts the result status is `cancelled`, and asserts `mockedTerminateChild` was not called.
 
-```ts
-it("7.6b abort before start does not call terminateChild", async () => {
-	// The pre-spawn abort path must NOT invoke terminateChild — there is no
-	// process to terminate. This test fails if finalize passes undefined
-	// to terminateChild instead of short-circuiting.
-	const mockProc = createMockProcess();
-	mockedSpawn.mockReturnValue(mockProc as any);
-
-	const controller = new AbortController();
-	controller.abort();
-
-	const result = readSerial({
-		port: "/dev/cu.usbserial-110",
-		baud: 115200,
-		timeoutMs: 5000,
-		signal: controller.signal,
-	});
-
-	const resolved = await result;
-	expect(resolved.status).toBe("cancelled");
-	// Critical: terminateChild must NOT be called when no process was spawned.
-	expect(mockedTerminateChild).not.toHaveBeenCalled();
-});
-```
-
-### Step 2: Run test to verify it fails
-
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/serial.test.ts -t "7.6b"`
-Expected: FAIL — `expect(mockedTerminateChild).not.toHaveBeenCalled()` fails because `finalize` calls `terminateChild(undefined)`.
-
-### Step 3: Implement the guard in `finalize`
-
-In `harness/src/lib/serial.ts`, modify `finalize` (lines 123-155). Replace the `terminateChild` call with a guard. The edited `finalize` should read:
-
-```ts
-	const finalize = async (result: SerialReadResult): Promise<void> => {
-		clearRuntimeListenersAndTimer();
-
-		// No process was spawned (e.g. pre-aborted signal) — resolve directly
-		// without invoking terminateChild. There is nothing to terminate.
-		if (!proc) {
-			resolve(result);
-			return;
-		}
-
-		let termination: Awaited<ReturnType<typeof terminateChild>>;
-		try {
-			termination = await terminateChild(proc);
-		} catch (err) {
-			// terminateChild is contract-bound not to throw, but defend.
-			resolve({
-				status: "error",
-				data: result.data,
-				error: `Serial child process termination threw: ${
-					err instanceof Error ? err.message : String(err)
-				}`,
-				code: "child_termination_unconfirmed",
-				processMayStillBeRunning: true,
-			});
-			return;
-		}
-
-		if (termination.status === "failed") {
-			resolve({
-				status: "error",
-				code: "child_termination_unconfirmed",
-				processMayStillBeRunning: true,
-				data: result.data,
-				error: "Serial child process termination could not be confirmed",
-			});
-			return;
-		}
-
-		resolve(result);
-	};
-```
-
-Note: the `as ChildProcess` cast on `terminateChild(proc as ChildProcess)` is removed — now `terminateChild(proc)` where `proc` is narrowed to `ChildProcess` by the `if (!proc)` guard.
-
-### Step 4: Run test to verify it passes
-
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/serial.test.ts -t "7.6b"`
-Expected: PASS
-
-### Step 5: Run full serial suite to verify no regression
-
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/serial.test.ts`
-Expected: 20 tests pass (was 19, +1 new).
-
-### Step 6: Run build + lint
-
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm run build && pnpm run lint`
-Expected: both exit 0. The removal of `as ChildProcess` should not cause a type error because the `if (!proc)` guard narrows the type.
-
-### Step 7: Commit
+**Verification command from repo root:**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
-git add harness/src/lib/serial.ts harness/tests/unit/serial.test.ts
-git commit -m "fix(serial): guard finalize against undefined proc on early abort
-
-When signal.aborted is already true on entry, selectResult runs before
-proc is assigned (spawn happens later). finalize then passed undefined
-to terminateChild, masked by an 'as ChildProcess' cast. The test passed
-only because terminateChild was mocked. Add an explicit guard: if no
-process was spawned, resolve directly without calling terminateChild.
-Remove the unsafe cast. Found by multi-review (3 reviewers converged)."
+cd harness && pnpm test tests/unit/serial.test.ts -t "7.6b"
 ```
+
+**Expected result:** the targeted test passes.
+
+**Traceability:** This verifies Fix 1 from the multi-review remediation: pre-spawn cancellation resolves as `cancelled` without attempting to terminate a process that does not exist.
 
 ---
 
@@ -279,18 +120,18 @@ Note: `safeLog` and `formatError` are both already in scope in `health.ts` (impo
 
 ### Step 2: Verify build + lint
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0.
 
 ### Step 3: Run health tests to verify no regression
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/health.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/health.test.ts`
 Expected: 40 tests pass (unchanged count — no new test, just a logging change).
 
 ### Step 4: Commit
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+# From repo root
 git add harness/src/tools/health.ts
 git commit -m "fix(health): log pkill ACECode failures instead of swallowing
 
@@ -364,7 +205,7 @@ Note: `validFileStats`, `mockedStat`, `EsptoolError`, and `flashSketch` are all 
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
+Historical command evidence: `cd harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
 Expected: FAIL — the error message contains "not found" and does not contain "EACCES".
 
 ### Step 3: Implement the fix
@@ -397,7 +238,7 @@ The `for` loop body is indented with 2 tabs (the `for` itself is at 1 tab inside
 
 ### Step 4: Run test to verify it passes
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
+Historical command evidence: `cd harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
 Expected: PASS
 
 ### Step 5: Update existing tests that assert "not found"
@@ -406,7 +247,7 @@ The new message format is `could not be accessed (ENOENT)` instead of `not found
 
 Grep for assertions that check the old message:
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott && rg -n "not found" harness/tests/unit/esptool.test.ts
+rg -n "not found" harness/tests/unit/esptool.test.ts
 ```
 
 For each match:
@@ -415,18 +256,18 @@ For each match:
 
 ### Step 6: Run full esptool suite to verify no regression
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/esptool.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/esptool.test.ts`
 Expected: 24 tests pass (was 23, +1 new). This must come AFTER Step 5 — test 11.1 will fail until its "not found" assertion is updated to the new message.
 
 ### Step 7: Run build + lint
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0.
 
 ### Step 8: Commit
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+# From repo root
 git add harness/src/lib/esptool.ts harness/tests/unit/esptool.test.ts
 git commit -m "fix(esptool): preserve stat error code in artifact validation
 
@@ -471,18 +312,18 @@ with:
 
 ### Step 2: Run test to verify it passes
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/health.test.ts -t "9.13"`
+Historical command evidence: `cd harness && pnpm test tests/unit/health.test.ts -t "9.13"`
 Expected: PASS — the implementation already produces these fields (verified in sdd-verify); the test just wasn't checking them.
 
 ### Step 3: Run full health suite to verify no regression
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/health.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/health.test.ts`
 Expected: 40 tests pass (unchanged count — same test, deeper assertions).
 
 ### Step 4: Commit
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+# From repo root
 git add harness/tests/unit/health.test.ts
 git commit -m "test(health): deepen 9.13 priority assertions
 
@@ -624,18 +465,18 @@ describe("renderHealthResult — neutral semantics (REQ-011)", () => {
 
 ### Step 3: Run tests to verify they pass
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test tests/unit/render-health.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/render-health.test.ts`
 Expected: 5 tests pass. The implementation already renders neutral language; these tests lock it in.
 
 ### Step 4: Run build + lint
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0. The `export` keyword should not cause issues.
 
 ### Step 5: Commit
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+# From repo root
 git add harness/src/tools/health.ts harness/tests/unit/render-health.test.ts
 git commit -m "test(health): cover renderHealthResult neutral semantics
 
@@ -655,40 +496,41 @@ Found by multi-review test analyzer."
 
 ### Step 1: Run full test suite
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm test`
-Expected: all tests pass. Count should be 224 (baseline) + 3 new (child-process +1, serial +1, esptool +1) + 5 new (render-health) = **232 tests**.
+Historical command evidence: `cd harness && pnpm test`
+Expected: all tests pass. Count should be **233 tests** across 11 files in
+the final post-review validation (baseline 224 → final 233).
 
 ### Step 2: Run build + lint
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott/harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0.
 
 ### Step 3: Verify no regression in existing assertions
 
 If Task 4 changed the esptool error message, existing tests 11.1-11.2 that asserted "not found" were updated in Task 4 Step 5 (the assertion-update step, which now runs before the full suite in Step 6). Confirm:
 
-Run: `cd /Users/felipe_gonzalez/Developer/acebott && rg -n "not found" harness/tests/unit/esptool.test.ts`
+Historical command evidence: `rg -n "not found" harness/tests/unit/esptool.test.ts`
 Expected: only the `esptool not found` match at line ~122 (the `checkEsptoolAvailable` code path, which was intentionally NOT changed). No matches in the `flashSketch artifact validation` describe block (tests 11.1/11.2/11.4) — those should now assert `could not be accessed`.
 
 ### Step 4: Update apply-progress.md
 
 Append a "## Post-review fixes" section to `openspec/changes/harden-harness-and-docs/apply-progress.md` documenting:
 - 6 fixes applied (list each with task number)
-- Test count: 224 → 232 (+8)
+- Test count: 224 → 233
 - Build/lint/test: all pass
 - Multi-review findings addressed: 1 critical, 4 major, 1 test gap
 
 ### Step 5: Commit progress update
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+# From repo root
 git add openspec/changes/harden-harness-and-docs/apply-progress.md
 git commit -m "docs(apply-progress): record post-review fixes
 
 6 fixes from multi-review: critical early-abort undefined proc,
 terminateChild null-guard, pkill logging, stat error preservation,
 9.13 deepened assertions, renderHealthResult test coverage. Test
-count 224 → 232, build/lint/test all pass."
+count 224 → 233, build/lint/test all pass."
 ```
 
 ---
@@ -705,7 +547,30 @@ count 224 → 232, build/lint/test all pass."
 | 6 | `renderHealthResult` test coverage | MAJOR | `health.ts` + new test | +5 |
 | 7 | Final validation | — | `apply-progress.md` | 0 |
 
-**Total new tests: +8** (224 → 232)
+**Final test count:** 224 → 233
+
+### Final 233-test inventory
+
+The final unit-test count is reconciled per file:
+
+| Test file | Tests |
+|-----------|------:|
+| `harness/tests/unit/arduino-cli.test.ts` | 15 |
+| `harness/tests/unit/child-process.test.ts` | 24 |
+| `harness/tests/unit/constants.test.ts` | 26 |
+| `harness/tests/unit/detect.test.ts` | 9 |
+| `harness/tests/unit/esptool.test.ts` | 24 |
+| `harness/tests/unit/health.test.ts` | 40 |
+| `harness/tests/unit/parsers.test.ts` | 10 |
+| `harness/tests/unit/render-health.test.ts` | 5 |
+| `harness/tests/unit/serial.test.ts` | 21 |
+| `harness/tests/unit/skills.test.ts` | 52 |
+| `harness/tests/unit/usb.test.ts` | 7 |
+| **Total** | **233** |
+
+This reconciles the final delta from the 224-test baseline: +1
+child-process null-guard test, +2 serial early-abort/termination-route tests,
++1 esptool permission-denied artifact test, and +5 render-health tests.
 
 **Out of scope (deferred to follow-up):**
 - Dead code `abort.ts` removal (minor)

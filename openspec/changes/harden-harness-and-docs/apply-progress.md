@@ -1,6 +1,8 @@
 # Apply Progress — harden-harness-and-docs
 
-> Implementation log. Updated after each phase.
+> Historical evidence log. This file is not an executable plan. Command names,
+> phase labels, and validation results below record prior work only; do not
+> rerun them from this document without a fresh branch-state review.
 
 ## Baselines
 
@@ -10,6 +12,29 @@ Four test-count reference points — do not confuse:
 - **164 tests** = baseline at `c22cfbc` (= `origin/main` before this change, 10 files).
 - **224 tests** = after the initial hardening apply, before the 6 post-review fixes.
 - **233 tests** = final state after all review fixes (11 files). This is what the merged code produces.
+
+## Final 233-test inventory
+
+The final unit-test count is reconciled per file:
+
+| Test file | Tests |
+|-----------|------:|
+| `harness/tests/unit/arduino-cli.test.ts` | 15 |
+| `harness/tests/unit/child-process.test.ts` | 24 |
+| `harness/tests/unit/constants.test.ts` | 26 |
+| `harness/tests/unit/detect.test.ts` | 9 |
+| `harness/tests/unit/esptool.test.ts` | 24 |
+| `harness/tests/unit/health.test.ts` | 40 |
+| `harness/tests/unit/parsers.test.ts` | 10 |
+| `harness/tests/unit/render-health.test.ts` | 5 |
+| `harness/tests/unit/serial.test.ts` | 21 |
+| `harness/tests/unit/skills.test.ts` | 52 |
+| `harness/tests/unit/usb.test.ts` | 7 |
+| **Total** | **233** |
+
+This reconciles the final delta from the 224-test baseline: +1
+child-process null-guard test, +2 serial early-abort/termination-route tests,
++1 esptool permission-denied artifact test, and +5 render-health tests.
 
 ## Pre-verified prerequisites
 
@@ -213,9 +238,8 @@ Surgical edits to `AGENTS.md` (no structural rewrite):
   `car.*` style is NOT vendor-confirmed.
 - **14.3** — Removed the duplicate `acebott-esp32-flash` bullet in the
   "Related Skills" section (was listed twice, now once).
-- **14.4** — Replaced the absolute
-  `[skills/README.md](file:///Users/felipe_gonzalez/Developer/acebott/skills/README.md)`
-  link with a repo-relative `` `skills/README.md` `` reference.
+- **14.4** — Replaced the developer-local absolute file URI for
+  `skills/README.md` with a repo-relative `` `skills/README.md` `` reference.
 - **14.5** — The rewritten Motor Control section opens with:
   "Motor API confirmed by vendor sketch `4.3Web_control_car.ino`
   (SHA-256: `ddd1b237...`)." per REQ-013.
@@ -319,7 +343,7 @@ Tasks 16.1-16.8 marked `[x]` in `tasks.md`.
 
 ## Post-review fixes (multi-review)
 
-After `sdd-verify` passed, a 5-reviewer multi-review found 1 critical bug and 5 major issues. All were fixed via a audited TDD plan (`docs/plans/2026-07-07-harden-harness-review-fixes.md`).
+After `sdd-verify` passed, a 5-reviewer multi-review found 1 critical bug and 5 major issues. All were fixed via an audited TDD plan (`docs/plans/2026-07-07-harden-harness-review-fixes.md`).
 
 | Fix | Severity | Commit | Description |
 |-----|----------|--------|-------------|
@@ -332,10 +356,10 @@ After `sdd-verify` passed, a 5-reviewer multi-review found 1 critical bug and 5 
 
 ### Validation after fixes
 
-- Test count: 224 → 232 (+8: +1 child-process, +1 serial, +1 esptool, +5 render-health)
+- Test count: 224 → 233
 - `pnpm run build`: exit 0
 - `pnpm run lint`: exit 0
-- `pnpm test`: 232/232 pass across 11 files
+- `pnpm test`: 233/233 pass across 11 files
 
 ### Plan audit
 
