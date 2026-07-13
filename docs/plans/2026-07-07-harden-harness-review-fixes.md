@@ -1,8 +1,14 @@
-# Harden Harness Review Fixes — Implementation Plan
+# Harden Harness Review Fixes — Historical Implementation Record
 
-> **For implementers:** Review this plan task-by-task and verify each task with evidence.
+<!-- markdownlint-disable MD010 -->
 
-**Goal:** Fix 6 findings from the multi-review of `harden-harness-and-docs` — 1 critical bug (early-abort passes `undefined` to `terminateChild`), 4 major issues, and 1 test gap — without regressing the 224 passing tests.
+> **Historical snapshot (2026-07-07):** This file preserves the remediation
+> plan and evidence for fixes that have already been applied. It is not an
+> executable plan. Treat every command block below as historical evidence only;
+> do not rerun or re-stage these steps from this document without a fresh
+> branch-state review.
+
+**Historical goal:** Fix 6 findings from the multi-review of `harden-harness-and-docs` — 1 critical bug (early-abort passes `undefined` to `terminateChild`), 4 major issues, and 1 test gap — without regressing the 224 passing tests.
 
 **Architecture:** The fixes are surgical and ordered by dependency. Fix 2 (null-guard in `terminateChild`) is the foundation — it makes `terminateChild` truly non-throwing for any input, which Fix 1 (serial early-abort) then relies on. Fixes 3-4 are independent error-handling improvements. Fixes 5-6 are test-quality gaps. Fixes were executed with RED → GREEN discipline during implementation; this document now records the current source and test evidence for already-applied fixes.
 
@@ -20,7 +26,7 @@
 - `harness/tests/unit/health.test.ts` — health orchestration tests
 - `harness/tests/unit/esptool.test.ts` — esptool + artifact validation tests
 
-**Critical context for the implementer:**
+**Historical implementation context:**
 - The harness uses tabs for indentation (biome enforces this). Match it.
 - `terminateChild` is mocked in `serial.test.ts` and wrapper tests — bugs in the real primitive are invisible there. Tests against the real primitive live in `child-process.test.ts`.
 - The `proc` variable in `readSerial` is declared `let proc: ChildProcess | undefined;` (serial.ts:99) and assigned at spawn (serial.ts:205). The early-abort path (serial.ts:180-182) runs before spawn.
@@ -114,12 +120,12 @@ Note: `safeLog` and `formatError` are both already in scope in `health.ts` (impo
 
 ### Step 2: Verify build + lint
 
-Run: `cd harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0.
 
 ### Step 3: Run health tests to verify no regression
 
-Run: `cd harness && pnpm test tests/unit/health.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/health.test.ts`
 Expected: 40 tests pass (unchanged count — no new test, just a logging change).
 
 ### Step 4: Commit
@@ -199,7 +205,7 @@ Note: `validFileStats`, `mockedStat`, `EsptoolError`, and `flashSketch` are all 
 
 ### Step 2: Run test to verify it fails
 
-Run: `cd harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
+Historical command evidence: `cd harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
 Expected: FAIL — the error message contains "not found" and does not contain "EACCES".
 
 ### Step 3: Implement the fix
@@ -232,7 +238,7 @@ The `for` loop body is indented with 2 tabs (the `for` itself is at 1 tab inside
 
 ### Step 4: Run test to verify it passes
 
-Run: `cd harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
+Historical command evidence: `cd harness && pnpm test tests/unit/esptool.test.ts -t "11.7"`
 Expected: PASS
 
 ### Step 5: Update existing tests that assert "not found"
@@ -250,12 +256,12 @@ For each match:
 
 ### Step 6: Run full esptool suite to verify no regression
 
-Run: `cd harness && pnpm test tests/unit/esptool.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/esptool.test.ts`
 Expected: 24 tests pass (was 23, +1 new). This must come AFTER Step 5 — test 11.1 will fail until its "not found" assertion is updated to the new message.
 
 ### Step 7: Run build + lint
 
-Run: `cd harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0.
 
 ### Step 8: Commit
@@ -306,12 +312,12 @@ with:
 
 ### Step 2: Run test to verify it passes
 
-Run: `cd harness && pnpm test tests/unit/health.test.ts -t "9.13"`
+Historical command evidence: `cd harness && pnpm test tests/unit/health.test.ts -t "9.13"`
 Expected: PASS — the implementation already produces these fields (verified in sdd-verify); the test just wasn't checking them.
 
 ### Step 3: Run full health suite to verify no regression
 
-Run: `cd harness && pnpm test tests/unit/health.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/health.test.ts`
 Expected: 40 tests pass (unchanged count — same test, deeper assertions).
 
 ### Step 4: Commit
@@ -459,12 +465,12 @@ describe("renderHealthResult — neutral semantics (REQ-011)", () => {
 
 ### Step 3: Run tests to verify they pass
 
-Run: `cd harness && pnpm test tests/unit/render-health.test.ts`
+Historical command evidence: `cd harness && pnpm test tests/unit/render-health.test.ts`
 Expected: 5 tests pass. The implementation already renders neutral language; these tests lock it in.
 
 ### Step 4: Run build + lint
 
-Run: `cd harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0. The `export` keyword should not cause issues.
 
 ### Step 5: Commit
@@ -490,20 +496,20 @@ Found by multi-review test analyzer."
 
 ### Step 1: Run full test suite
 
-Run: `cd harness && pnpm test`
+Historical command evidence: `cd harness && pnpm test`
 Expected: all tests pass. Count should be **233 tests** across 11 files in
 the final post-review validation (baseline 224 → final 233).
 
 ### Step 2: Run build + lint
 
-Run: `cd harness && pnpm run build && pnpm run lint`
+Historical command evidence: `cd harness && pnpm run build && pnpm run lint`
 Expected: both exit 0.
 
 ### Step 3: Verify no regression in existing assertions
 
 If Task 4 changed the esptool error message, existing tests 11.1-11.2 that asserted "not found" were updated in Task 4 Step 5 (the assertion-update step, which now runs before the full suite in Step 6). Confirm:
 
-Run: `rg -n "not found" harness/tests/unit/esptool.test.ts`
+Historical command evidence: `rg -n "not found" harness/tests/unit/esptool.test.ts`
 Expected: only the `esptool not found` match at line ~122 (the `checkEsptoolAvailable` code path, which was intentionally NOT changed). No matches in the `flashSketch artifact validation` describe block (tests 11.1/11.2/11.4) — those should now assert `could not be accessed`.
 
 ### Step 4: Update apply-progress.md
@@ -542,6 +548,29 @@ count 224 → 233, build/lint/test all pass."
 | 7 | Final validation | — | `apply-progress.md` | 0 |
 
 **Final test count:** 224 → 233
+
+### Final 233-test inventory
+
+The final unit-test count is reconciled per file:
+
+| Test file | Tests |
+|-----------|------:|
+| `harness/tests/unit/arduino-cli.test.ts` | 15 |
+| `harness/tests/unit/child-process.test.ts` | 24 |
+| `harness/tests/unit/constants.test.ts` | 26 |
+| `harness/tests/unit/detect.test.ts` | 9 |
+| `harness/tests/unit/esptool.test.ts` | 24 |
+| `harness/tests/unit/health.test.ts` | 40 |
+| `harness/tests/unit/parsers.test.ts` | 10 |
+| `harness/tests/unit/render-health.test.ts` | 5 |
+| `harness/tests/unit/serial.test.ts` | 21 |
+| `harness/tests/unit/skills.test.ts` | 52 |
+| `harness/tests/unit/usb.test.ts` | 7 |
+| **Total** | **233** |
+
+This reconciles the final delta from the 224-test baseline: +1
+child-process null-guard test, +2 serial early-abort/termination-route tests,
++1 esptool permission-denied artifact test, and +5 render-health tests.
 
 **Out of scope (deferred to follow-up):**
 - Dead code `abort.ts` removal (minor)

@@ -1,19 +1,19 @@
-# 2 Stacked PRs for Harness Hardening — Implementation Plan (v3, audit-hardened)
-
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+# 2 Stacked PRs for Harness Hardening — Historical Plan Record (v3, audit-hardened)
 
 > **Historical snapshot (2026-07-08):** This plan records the pre-merge
-> execution state based on `c22cfbc`. Since then, `origin/main` advanced and
-> the merged harness reports 233 tests. Do not rerun these branch or cherry-pick
-> commands without revalidating the commit SHAs, base, and test expectations;
-> use `apply-progress.md` for the current hardening status.
+> execution state based on `c22cfbc`. It is not an executable plan. Since then,
+> `origin/main` advanced and the merged harness reports 233 tests. Treat every
+> command block below as historical evidence only; do not rerun branch,
+> cherry-pick, push, PR, or merge commands without revalidating the commit
+> SHAs, base, and test expectations. Use `apply-progress.md` for the current
+> hardening status.
 
-**Goal:** Split the harness hardening work into 2 stacked PRs (code, then docs) that each compile and pass the full suite. Incorporates all findings from two external audits and the local preflight.
+**Historical goal:** Split the harness hardening work into 2 stacked PRs (code, then docs) that each compile and pass the full suite. Incorporates all findings from two external audits and the local preflight.
 
 **Test baselines (three distinct numbers — do not confuse):**
 - **164 tests** = baseline at `c22cfbc` (origin/main, before any hardening).
 - **224 tests** = after the initial hardening apply, before the 6 post-review fixes.
-- **232 tests** = final state, after the 6 post-review fixes. This is what both PRs produce when cherry-picked.
+- **232 tests** = historical pre-merge snapshot captured by this plan after the 6 post-review fixes. The current merged final is **233 tests**; use `apply-progress.md` as the current source of truth.
 
 **Architecture:** Two stacked PRs. PR1 = all harness code + tests (7 commits, ~3700 lines, builds clean per preflight). PR2 = documentation + OpenSpec artifacts (3 commits, ~2500 lines, no build impact). PR2 bases on PR1; both merge into `main` sequentially with explicit retargeting.
 
@@ -76,22 +76,22 @@ cb465e3  docs(openspec)         ← PR2
 
 **Step 1: Verify gh CLI authenticated**
 
-Run: `gh auth status`
+Historical command evidence: `gh auth status`
 Expected: "Logged in to github.com" with access to `fegome90-cmd/acebott`.
 
 **Step 2: Verify origin remote**
 
-Run: `git remote get-url origin`
+Historical command evidence: `git remote get-url origin`
 Expected: `https://github.com/fegome90-cmd/acebott.git`
 
 **Step 3: Verify origin/main matches base**
 
-Run: `git rev-parse origin/main`
+Historical command evidence: `git rev-parse origin/main`
 Expected: `c22cfbc...`
 
 **Step 4: Verify working tree is clean**
 
-Run: `git status --porcelain`
+Historical command evidence: `git status --porcelain`
 Expected: empty output. If not empty, stash or commit before proceeding.
 
 If any step fails, STOP and resolve.
@@ -103,7 +103,7 @@ If any step fails, STOP and resolve.
 **Step 1: Create branch from origin/main**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 git checkout -b harden/1-code c22cfbc
 ```
 
@@ -124,7 +124,7 @@ Expected: all 7 apply cleanly (preflight verified this). If any conflict, STOP �
 **Step 3: Run full harness suite (all three gates)**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott/harness
+cd "$(git rev-parse --show-toplevel)/harness"
 pnpm run build
 echo "BUILD_EXIT=$?"
 pnpm run lint
@@ -140,7 +140,7 @@ If any gate fails, STOP and report. Do NOT open the PR with a broken build.
 **Step 4: Verify no out-of-scope files touched**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 git diff --name-only c22cfbc..harden/1-code
 ```
 
@@ -174,7 +174,7 @@ No additional commit needed — cherry-picks are the commits.
 **Step 1: Push branch**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 git push -u origin harden/1-code
 ```
 
@@ -264,7 +264,7 @@ Expected: state OPEN, URL and number printed. Record the PR number.
 
 This is a **manual checkpoint**. The plan pauses here.
 
-**Instructions for the reviewer:**
+**Historical reviewer instructions:**
 1. Review PR1 commit-by-commit.
 2. Run the full suite locally if CI is not configured: \`cd harness && pnpm run build && pnpm run lint && pnpm test\`.
 3. Merge PR1 into \`main\`. Both merge styles work, but they affect Task 5 differently:
@@ -275,7 +275,7 @@ This is a **manual checkpoint**. The plan pauses here.
 **After PR1 is merged, verify main advanced:**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 git checkout main
 git pull origin main
 git log --oneline -3
@@ -292,7 +292,7 @@ Expected: main HEAD advanced. If regular merge, the 7 code commits are in main's
 **Step 1: Create branch from PR1's branch**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 git checkout -b harden/2-docs harden/1-code
 ```
 
@@ -325,7 +325,7 @@ The `--ignore-unmatch` makes it safe if the path was already removed by a prior 
 **Step 4: Run full suite (docs should not break anything)**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott/harness
+cd "$(git rev-parse --show-toplevel)/harness"
 pnpm run build && pnpm run lint && pnpm test
 ```
 
@@ -333,8 +333,8 @@ Expected: BUILD_EXIT=0, LINT_EXIT=0, 232 tests pass.
 
 Also run markdown lint on touched files:
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
-pnpm run lint:md 2>&1 | tail -10
+cd "$(git rev-parse --show-toplevel)"
+pnpm run lint:md
 ```
 Expected: no NEW errors in the files this PR touches (pre-existing errors in out-of-scope files may remain).
 
@@ -375,7 +375,7 @@ If ANY harness code path appears, STOP — contamination occurred.
 **Step 1: Push branch**
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 git push -u origin harden/2-docs
 ```
 
@@ -417,7 +417,7 @@ Documentation corrections for the harness hardening change: vendor-confirmed pin
 ### docs: fix ultrasonic pinout (34e9670)
 - AGENTS.md: ultrasonic pins corrected to TRIG 13 / ECHO 14 (were 5/18) — confirmed by vendor sketch 3.1UltrasonicRanging.ino (SHA-256 69244807...)
 - AGENTS.md: motor API updated to ACB_SmartCar.Move(direction, speed) — confirmed by 4.3Web_control_car.ino (SHA-256 ddd1b237...)
-- Removed duplicate acebott-esp32-flash entry and absolute file:/// links
+- Removed duplicate acebott-esp32-flash entry and developer-local file URI links
 - skills/esp32-arduino-development/SKILL.md: pinned to esp32:esp32@2.0.18, arduino-cli upload removed, 3.x labeled incompatible
 - Adds docs/plans/2026-07-07-harden-harness-review-fixes.md (the implementation plan)
 
@@ -447,7 +447,7 @@ gh pr view --json url,state,number
 `harden/1-code` remains ancestral to `main`, so a simple retarget works:
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 gh pr edit <PR2_NUMBER> --base main
 ```
 
@@ -458,7 +458,7 @@ GitHub recomputes the diff. Since PR1's commits are now in main, the diff shrink
 The squash commit is NOT ancestral to `harden/1-code`, so GitHub would still show PR1's code changes in PR2's diff. You must rebase PR2 onto the new main first:
 
 ```bash
-cd /Users/felipe_gonzalez/Developer/acebott
+cd "$(git rev-parse --show-toplevel)"
 git checkout harden/2-docs
 git fetch origin
 git rebase --onto origin/main harden/1-code harden/2-docs

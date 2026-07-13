@@ -1,13 +1,13 @@
-# Classify Divergent Main Implementation Plan
+# Classify Divergent Main Historical Recovery Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Historical snapshot (2026-07-12):** This document captures the
+> pre-recovery preconditions and records the recovery sequence as evidence.
+> It is not an executable plan. The thematic branches now exist; do not rerun
+> the create/restore steps or overwrite those refs. Treat every command block
+> below as historical evidence only, and verify current branch state from the
+> live repository before taking any action.
 
-> **Recovery snapshot (2026-07-12):** This document captures the
-> pre-recovery preconditions. The thematic branches now exist; do not rerun
-> the create/restore steps or overwrite those refs. Verify their current
-> status instead.
-
-**Goal:** Separate the preserved WIP stash into independently reviewable branches without modifying divergent `main`.
+**Historical goal:** Separate the preserved WIP stash into independently reviewable branches without modifying divergent `main`.
 
 **Architecture:** Treat `origin/main` as the base for every thematic branch. Recover tracked files from the stash's main tree and untracked files from its third parent, never applying the mixed stash wholesale. Keep `main`, `backup/main-diverged-20260711`, and `stash@{0}` intact until every recovered branch is verified.
 
@@ -96,9 +96,15 @@ git restore --source=stash@{0} -- \
 **Step 3: Extract the untracked hardening plan from the stash parent**
 
 ```bash
+set -euo pipefail
 mkdir -p docs/plans
-git show 'stash@{0}^3:docs/plans/2026-07-08-stacked-prs-hardening.md' \
-  > docs/plans/2026-07-08-stacked-prs-hardening.md
+tmp="$(mktemp)"
+if git show 'stash@{0}^3:docs/plans/2026-07-08-stacked-prs-hardening.md' > "$tmp"; then
+  mv "$tmp" docs/plans/2026-07-08-stacked-prs-hardening.md
+else
+  rm -f "$tmp"
+  exit 1
+fi
 ```
 
 **Step 4: Add this implementation plan and commit the scoped branch**
@@ -150,19 +156,38 @@ git restore --source=stash@{0} -- skills/README.md
 **Step 3: Extract only BLE untracked paths from the stash parent**
 
 ```bash
+set -euo pipefail
 mkdir -p docs/references scripts sketches/ble-gatt-control
-git show 'stash@{0}^3:docs/references/ble-gatt-esp32-ios-robot-control.md' \
-  > docs/references/ble-gatt-esp32-ios-robot-control.md
-git show 'stash@{0}^3:docs/references/ble-motor-control-basic.ino' \
-  > docs/references/ble-motor-control-basic.ino
-git show 'stash@{0}^3:docs/references/ble_motor_controller.py' \
-  > docs/references/ble_motor_controller.py
-git show 'stash@{0}^3:docs/references/ios-ble-swift.swift' \
-  > docs/references/ios-ble-swift.swift
-git show 'stash@{0}^3:scripts/ble_client.py' \
-  > scripts/ble_client.py
-git show 'stash@{0}^3:sketches/ble-gatt-control/ble-gatt-control.ino' \
-  > sketches/ble-gatt-control/ble-gatt-control.ino
+
+restore_from_stash() {
+  local src="$1"
+  local dest="$2"
+  local tmp
+  tmp="$(mktemp)"
+
+  if ! git show "$src" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+
+  if ! mv "$tmp" "$dest"; then
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
+restore_from_stash 'stash@{0}^3:docs/references/ble-gatt-esp32-ios-robot-control.md' \
+  docs/references/ble-gatt-esp32-ios-robot-control.md
+restore_from_stash 'stash@{0}^3:docs/references/ble-motor-control-basic.ino' \
+  docs/references/ble-motor-control-basic.ino
+restore_from_stash 'stash@{0}^3:docs/references/ble_motor_controller.py' \
+  docs/references/ble_motor_controller.py
+restore_from_stash 'stash@{0}^3:docs/references/ios-ble-swift.swift' \
+  docs/references/ios-ble-swift.swift
+restore_from_stash 'stash@{0}^3:scripts/ble_client.py' \
+  scripts/ble_client.py
+restore_from_stash 'stash@{0}^3:sketches/ble-gatt-control/ble-gatt-control.ino' \
+  sketches/ble-gatt-control/ble-gatt-control.ino
 ```
 
 Do not extract the QD010 sketch or `.pnpm-store/`.
@@ -205,9 +230,15 @@ git switch -c experiment/qd010-ps3-validation origin/main
 **Step 2: Extract the single untracked sketch from the stash parent**
 
 ```bash
+set -euo pipefail
 mkdir -p sketches/qd010-validation
-git show 'stash@{0}^3:sketches/qd010-validation/qd010-validation.ino' \
-  > sketches/qd010-validation/qd010-validation.ino
+tmp="$(mktemp)"
+if git show 'stash@{0}^3:sketches/qd010-validation/qd010-validation.ino' > "$tmp"; then
+  mv "$tmp" sketches/qd010-validation/qd010-validation.ino
+else
+  rm -f "$tmp"
+  exit 1
+fi
 ```
 
 **Step 3: Commit and verify the experiment**

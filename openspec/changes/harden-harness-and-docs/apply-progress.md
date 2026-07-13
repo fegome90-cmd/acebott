@@ -1,6 +1,8 @@
 # Apply Progress — harden-harness-and-docs
 
-> Implementation log. Updated after each phase.
+> Historical evidence log. This file is not an executable plan. Command names,
+> phase labels, and validation results below record prior work only; do not
+> rerun them from this document without a fresh branch-state review.
 
 ## Baselines
 
@@ -10,6 +12,29 @@ Four test-count reference points — do not confuse:
 - **164 tests** = baseline at `c22cfbc` (= `origin/main` before this change, 10 files).
 - **224 tests** = after the initial hardening apply, before the 6 post-review fixes.
 - **233 tests** = final state after all review fixes (11 files). This is what the merged code produces.
+
+## Final 233-test inventory
+
+The final unit-test count is reconciled per file:
+
+| Test file | Tests |
+|-----------|------:|
+| `harness/tests/unit/arduino-cli.test.ts` | 15 |
+| `harness/tests/unit/child-process.test.ts` | 24 |
+| `harness/tests/unit/constants.test.ts` | 26 |
+| `harness/tests/unit/detect.test.ts` | 9 |
+| `harness/tests/unit/esptool.test.ts` | 24 |
+| `harness/tests/unit/health.test.ts` | 40 |
+| `harness/tests/unit/parsers.test.ts` | 10 |
+| `harness/tests/unit/render-health.test.ts` | 5 |
+| `harness/tests/unit/serial.test.ts` | 21 |
+| `harness/tests/unit/skills.test.ts` | 52 |
+| `harness/tests/unit/usb.test.ts` | 7 |
+| **Total** | **233** |
+
+This reconciles the final delta from the 224-test baseline: +1
+child-process null-guard test, +2 serial early-abort/termination-route tests,
++1 esptool permission-denied artifact test, and +5 render-health tests.
 
 ## Pre-verified prerequisites
 
