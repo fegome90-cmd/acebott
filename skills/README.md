@@ -8,6 +8,24 @@
 Hardware: **Acebott QD001 ESP32 MAX V1.0** — ESP32-D0WD-V3, Arduino core 2.0.18,
 CH340/CH341 serial, port `/dev/cu.usbserial-*`.
 
+## BLE protocol note for this branch
+
+The active QD001 BLE implementation is `sketches/ble-gatt-control/` plus
+`scripts/ble_client.py`. It is the **canonical text-v1** stack:
+
+- UUIDs: service `12345678-1234-1234-1234-1234567890ab`, command
+  `abcd1234-5678-90ab-cdef-1234567890ab`, telemetry
+  `c8f60001-1234-5678-9abc-def012345678`.
+- Commands: ASCII `F`, `B`, `L`, `R`, `S` with optional speed like `F,200`.
+  `L/R` preserve the verified QD001 spin-left/spin-right mapping.
+- Telemetry: CSV text `distance,ir_left,ir_right`.
+- Safety: client writes must be write-without-response, retransmit active motion
+  below the 500 ms firmware failsafe, and send `S` on exit.
+
+Files under `docs/references/ble-*`, `ble_motor_controller.py`, and
+`ios-ble-swift.swift` are **reference/binary-v2** material only unless explicitly
+stated otherwise. They use separate UUIDs and packed 6-byte binary telemetry.
+
 ## Active Skills
 
 ### Grupo 1: Robot QD001 (desde wiki del repo)
@@ -85,7 +103,9 @@ Quedan como gaps **reales**:
 - **OTA** — actualización over-the-air (no cubierto por ninguna skill).
 - **OLED / NeoPixel / displays** — con código (las `ACB_*` del bundle los
   cubren a nivel binario precompilado, pero no como skill navegable).
-- **BLE / LoRa** — conectividad inalámbrica no-WiFi (no cubierto).
+- **BLE / LoRa** — conectividad inalámbrica no-WiFi (**BLE**: skill `esp32-ble/`
+  diseñada en change `cerrar-gaps-ecoeficiencia`, pendiente implementación;
+  **BT Classic SPP**: documentado en wiki pero sin skill dedicada).
 - **mTLS / TLS mutuo** — endurecimiento de conexiones seguras (no cubierto).
 - **ULP coprocessor** — ultra-low-power (mencionado en `esp32-rtos-power` como
   wakeup source, pero sin skill dedicada).
