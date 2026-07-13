@@ -37,14 +37,6 @@ BLECharacteristic* commandChar;
 BLECharacteristic* telemetryChar;
 bool deviceConnected = false;
 
-// SPP-style disconnect callback
-void btCallback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
-  if (event == ESP_SPP_CLOSE_EVT) {
-    ACB_SmartCar.Move(Stop, 0);
-    Serial.println("[BLE] Client disconnected, motors stopped");
-  }
-}
-
 // BLE Server callbacks
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
