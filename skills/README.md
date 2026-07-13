@@ -85,7 +85,9 @@ Quedan como gaps **reales**:
 - **OTA** — actualización over-the-air (no cubierto por ninguna skill).
 - **OLED / NeoPixel / displays** — con código (las `ACB_*` del bundle los
   cubren a nivel binario precompilado, pero no como skill navegable).
-- **BLE / LoRa** — conectividad inalámbrica no-WiFi (no cubierto).
+- **BLE / LoRa** — conectividad inalámbrica no-WiFi (**BLE**: skill `esp32-ble/`
+  diseñada en change `cerrar-gaps-ecoeficiencia`, pendiente implementación;
+  **BT Classic SPP**: documentado en wiki pero sin skill dedicada).
 - **mTLS / TLS mutuo** — endurecimiento de conexiones seguras (no cubierto).
 - **ULP coprocessor** — ultra-low-power (mencionado en `esp32-rtos-power` como
   wakeup source, pero sin skill dedicada).
